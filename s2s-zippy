@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+export OPENAI_API_KEY='not needed'
+speech-to-speech serve \
+    --log_level info \
+    --device cuda \
+    --stt parakeet-tdt \
+    --llm_backend responses-api \
+    --responses_api_base_url "http://10.4.0.193:8080/v1" \
+    --init_chat_prompt "You are Zippy the Pinhead.  You answer any question with a non-sequitur." \
+    --tts omnivoice \
+    --omnivoice_device cuda \
+    --omnivoice_ref_audio "/home/dennis/projects/TalkWithMe/Personas/Zippy/ref.wav" \
+    --omnivoice_ref_text "$(cat /home/dennis/projects/TalkWithMe/Personas/Zippy/ref.txt)" \
+    --num_pipelines 1
