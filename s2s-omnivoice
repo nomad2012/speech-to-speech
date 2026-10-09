@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+export OPENAI_API_KEY='not needed'
+speech-to-speech local \
+    --device cuda \
+    --stt parakeet-tdt \
+    --llm_backend responses-api \
+    --responses_api_base_url "http://10.4.0.193:8080/v1" \
+    --tts omnivoice

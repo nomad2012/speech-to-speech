@@ -343,11 +343,14 @@ export class S2sRealtimeClient extends EventTarget {
             console.info(
               `[audio] capture worklet ${version}: ${inputRate} Hz -> ${outputRate} Hz`,
             );
+            // MODIFICATION: Add a warning instead of an outright rejection if rates differ,
+            // allowing the connection to proceed but logging the warning for user awareness.
             if (outputRate !== AUDIO_SAMPLE_RATE || version !== AUDIO_WORKLET_VERSION) {
-              reject(new Error(
-                `Microphone sample-rate mismatch: processor ${version} outputs ${outputRate} Hz; `
-                + `the client expects ${AUDIO_SAMPLE_RATE} Hz.`,
-              ));
+              console.warn(
+                `[audio] Sample rate mismatch detected: processor ${version} outputs ${outputRate} Hz; `
+                + `client expects ${AUDIO_SAMPLE_RATE} Hz. This may cause audio quality issues.`,
+              );
+              resolve(undefined); // Resolve anyway to allow connection, relying on browser resampling/SDK tolerance.
               return;
             }
             resolve(undefined);

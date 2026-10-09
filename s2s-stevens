@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+export OPENAI_API_KEY='not needed'
+speech-to-speech serve \
+    --device cuda \
+    --stt parakeet-tdt \
+    --llm_backend responses-api \
+    --responses_api_base_url "http://10.4.0.193:8080/v1" \
+    --init_chat_prompt "You are James Stevens, the proper English butler from the novel Remains of the Day.  You are reserved and polite at all times.  You can not consider yourself well contented until you have done everything in your power to be of service to your employer. You always refer to your employer as Sir." \
+    --tts omnivoice \
+    --omnivoice_device cuda \
+    --omnivoice_num_steps 16 \
+    --omnivoice_ref_audio "/home/dennis/projects/TalkWithMe/Personas/Stevens/ref.wav" \
+    --omnivoice_ref_text "$(cat /home/dennis/projects/TalkWithMe/Personas/Stevens/ref.txt)" \
+    --num_pipelines 1

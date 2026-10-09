@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+export SPEECH_TO_SPEECH_URL=ws://localhost:8765/v1/realtime
+export SERPER_API_KEY=""
+export STARTUP_GREETING="Hello.  How my I help you?"
+uv run uvicorn --app-dir demo server:app --reload --port 7860
