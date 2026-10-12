@@ -1,4 +1,14 @@
 // @ts-check
+
+/** Opt-in tracing: `localStorage.setItem("s2s.debug", "1")` then reload. */
+const DEBUG = (() => {
+  try {
+    return localStorage.getItem("s2s.debug") === "1";
+  } catch {
+    return false;
+  }
+})();
+
 /**
  * Demo adapter around the official OpenAI Agents SDK RealtimeSession.
  *
@@ -33,6 +43,7 @@
  * @property {string} [callsUrl]
  * @property {RTCIceServer[]} [iceServers]
  * @property {string} voice
+ * @property {string} [persona]
  * @property {string} instructions
  * @property {string} [startupGreeting]
  * @property {MediaStream} [micStream]
@@ -215,6 +226,14 @@ export class S2sRealtimeClient extends EventTarget {
       });
     }
 
+    // Patch the transport's send method to restore the persona field.
+    // The OpenAI Agents SDK serializes session.update via Pydantic which
+    // strips custom fields like "persona" that aren't in the GA schema.
+    // This wrapper re-injects it before the event reaches the wire.
+    if (this.options.persona) {
+      this._patchTransportForPersona();
+    }
+
     this._agent = this._buildAgent();
     this._session = new RealtimeSession(this._agent, {
       transport: this._transport,
@@ -252,6 +271,7 @@ export class S2sRealtimeClient extends EventTarget {
   _sessionConfig() {
     return {
       outputModalities: ["audio"],
+      persona: this.options.persona || undefined,
       providerData: {
         extensions: ["speech_to_speech.input_audio_transcription.snapshot"],
       },
@@ -294,6 +314,7 @@ export class S2sRealtimeClient extends EventTarget {
       name: "speech-to-speech-demo",
       instructions: this.options.instructions,
       voice: this.options.voice,
+      persona: this.options.persona || undefined,
       tools,
     });
   }
@@ -735,13 +756,51 @@ export class S2sRealtimeClient extends EventTarget {
     this._setStatus("ai-speaking");
   }
 
-  /** @param {{voice?: string, instructions?: string}} patch */
+  /**
+   * Patch the transport's send method to restore the persona field.
+   *
+   * The OpenAI Agents SDK serializes session.update events via Pydantic,
+   * which strips custom fields like "persona" that aren't in the GA schema.
+   * This wrapper re-injects the persona into the session dict before the
+   * event reaches the wire.
+   */
+  _patchTransportForPersona() {
+    if (!this._transport) return;
+
+    const originalSendEvent = this._transport.sendEvent.bind(this._transport);
+    const self = this;
+
+    /** @param {Record<string, unknown>} event */
+    this._transport.sendEvent = function (event) {
+      // For session.update events, re-inject the persona field into the session dict.
+      if (event.type === "session.update" && event.session && typeof event.session === "object") {
+        const session = /** @type {Record<string, unknown>} */ (event.session);
+        if (!session.persona && self.options.persona) {
+          session.persona = self.options.persona;
+          if (DEBUG) console.debug(`[client] patched persona=${self.options.persona} into session.update`);
+        }
+      }
+      return originalSendEvent(event);
+    };
+  }
+
+  /** @param {{voice?: string, persona?: string, instructions?: string}} patch */
   updateSession(patch) {
     if (patch.voice) this.options.voice = patch.voice;
+    if (patch.persona !== undefined) this.options.persona = patch.persona;
     if (patch.instructions) this.options.instructions = patch.instructions;
     if (!this._session) return;
     this._agent = this._buildAgent();
     void this._session.updateAgent(this._agent);
+    // Send persona update via session.update so the server picks it up.
+    if (patch.persona !== undefined) {
+      console.log(`[client] sending session.update with persona: ${patch.persona}`);
+      this._transport?.sendEvent({
+        type: "session.update",
+        session: { persona: this.options.persona || undefined },
+      });
+      console.log(`[client] session.update sent`);
+    }
   }
 
   /** @param {ToolDef[]} tools */

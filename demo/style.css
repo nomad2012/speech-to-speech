@@ -188,6 +188,34 @@ a:hover {
   }
 }
 
+.topbar-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.persona-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.persona-label {
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.persona-description {
+  font-weight: 600;
+  color: var(--text);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .topbar-right {
   display: flex;
   align-items: center;

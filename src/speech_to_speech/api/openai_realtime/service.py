@@ -365,6 +365,8 @@ class RealtimeService:
         speculative_turns: SpeculativeTurnTracker | None = None,
         turn_latency_store: TurnLatencyStore | None = None,
         default_instructions: str | None = None,
+        personas: dict[str, Any] | None = None,
+        tts_handler: Any | None = None,
     ) -> None:
         self.text_prompt_queue = text_prompt_queue
         self.should_listen = should_listen
@@ -374,6 +376,8 @@ class RealtimeService:
         if speculative_turns is not None:
             speculative_turns.wait_observer = self.turn_latency_store.record_smart_wait
         self._default_instructions = default_instructions
+        self._personas = personas or {}
+        self._tts_handler = tts_handler
         # None means the active backend does not declare a complete language set.
         self.stt_supported_languages: set[str] | None = None
         self.tts_supported_languages: set[str] | None = None
@@ -485,13 +489,86 @@ class RealtimeService:
     def build_session_updated(self, conn_id: str) -> SessionUpdatedEvent:
         return self.session.build_session_updated(conn_id)
 
-    def handle_session_update(self, conn_id: str, event: SessionUpdateEvent) -> Optional[RealtimeErrorEvent]:
+    def handle_session_update(
+        self,
+        conn_id: str,
+        event: SessionUpdateEvent,
+        *,
+        raw_session: dict | None = None,
+    ) -> Optional[RealtimeErrorEvent]:
+        # Extract persona from raw session data (not in SDK model).
+        logger.info(
+            "Session update for conn=%s: raw_session keys=%s, persona field=%r",
+            conn_id,
+            list(raw_session.keys()) if isinstance(raw_session, dict) else None,
+            raw_session.get("persona") if isinstance(raw_session, dict) else None,
+        )
+        if raw_session is not None:
+            persona_name = raw_session.get("persona")
+            self._apply_persona_change(conn_id, persona_name)
+
         error = self.session.handle_session_update(conn_id, event)
         if error is None:
             # A prefetch captured the previous session configuration.
             self.response.discard_tool_followup_prefetch(conn_id)
             self.response.maybe_start_tool_followup_prefetch(conn_id)
         return error
+
+    def _apply_persona_change(self, conn_id: str, persona_name: str | None) -> None:
+        """Apply a persona change: update runtime config and TTS voice.
+
+        This is called from ``handle_session_update`` when the client sends
+        a ``persona`` field in the session update.
+        """
+        logger.info(
+            "_apply_persona_change: conn=%s, persona_name=%r, tts_handler=%r, available_personas=%s",
+            conn_id,
+            persona_name,
+            type(self._tts_handler).__name__ if self._tts_handler else None,
+            list(self._personas.keys()),
+        )
+
+        st = self._conns.get(conn_id)
+        if st is None:
+            logger.warning("_apply_persona_change: no connection state for conn=%s", conn_id)
+            return
+
+        cfg = st.runtime_config
+        tts = self._tts_handler
+
+        # Resolve persona instructions from the registry.
+        persona = self._personas.get(persona_name) if persona_name else None
+        if persona is not None:
+            cfg.persona = persona_name
+            cfg.persona_instructions = persona.prompt
+            logger.info(
+                "Persona set to %r (%s), prompt=%r",
+                persona_name,
+                persona.description or "(no description)",
+                persona.prompt[:100] if persona.prompt else "",
+            )
+        else:
+            cfg.persona = None
+            cfg.persona_instructions = None
+            if persona_name:
+                logger.warning(
+                    "Unknown persona %r; available personas: %s",
+                    persona_name,
+                    ", ".join(sorted(self._personas.keys())),
+                )
+
+        # Switch the TTS voice if the handler supports it.
+        if tts is not None and hasattr(tts, "switch_persona"):
+            logger.info("Calling tts.switch_persona(%r) on %s", persona_name, type(tts).__name__)
+            tts.switch_persona(persona_name)
+            logger.info("tts.switch_persona(%r) returned; current_persona=%r", persona_name, getattr(tts, "current_persona", None))
+        elif tts is not None:
+            logger.warning(
+                "TTS handler %s exists but does not have switch_persona; persona change will not affect TTS voice",
+                type(tts).__name__,
+            )
+        else:
+            logger.warning("No TTS handler configured; persona change will not affect TTS voice")
 
     def handle_audio_append(self, conn_id: str, event: InputAudioBufferAppendEvent) -> list[bytes]:
         return self.audio.handle_audio_append(conn_id, event)

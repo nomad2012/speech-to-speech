@@ -668,6 +668,45 @@ def _build_pipeline_unit(
     elif tts_selection.name in {"chatTTS", "pocket"}:
         service.tts_supported_languages = set()
 
+    # Wire the TTS handler and personas to the service so persona switching works.
+    service._tts_handler = tts_handler
+    if tts_selection.name == "omnivoice":
+        try:
+            from speech_to_speech.personas import load_personas
+
+            personas = load_personas()
+            service._personas = personas
+            logger.info("Loaded %d persona(s) for omnivoice TTS", len(personas))
+            # Pre-build voice clone prompts for personas that have reference audio.
+            if hasattr(tts_handler, "model") and personas:
+                try:
+                    for persona_name, persona in personas.items():
+                        if persona.is_voice_cloned and persona.ref_audio_path is not None:
+                            if not hasattr(tts_handler, "persona_prompts"):
+                                tts_handler.persona_prompts = {}
+                            if not hasattr(tts_handler, "current_persona"):
+                                tts_handler.current_persona = None
+                            try:
+                                tts_handler.persona_prompts[persona_name] = tts_handler.model.create_voice_clone_prompt(
+                                    ref_audio=str(persona.ref_audio_path),
+                                    ref_text=persona.ref_text,
+                                )
+                                logger.info(
+                                    "Pre-built persona clone prompt for %r (%s)",
+                                    persona_name,
+                                    persona.ref_audio_path.name,
+                                )
+                            except Exception as exc:  # pragma: no cover - defensive
+                                logger.warning(
+                                    "Failed to build persona clone prompt for %r: %s",
+                                    persona_name,
+                                    exc,
+                                )
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("Failed to pre-build persona prompts for omnivoice TTS: %s", exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to load personas for omnivoice TTS: %s", exc)
+
     return PipelineUnit(
         index=index,
         service=service,

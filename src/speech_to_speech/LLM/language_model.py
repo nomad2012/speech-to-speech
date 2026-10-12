@@ -281,8 +281,17 @@ class BaseLanguageModelHandler(BaseHandler[LLMIn, LLMOut], ABC):
         wants_audio: bool = True,
         *,
         language_name: str | None = None,
+        persona_instructions: str | None = None,
     ) -> None:
-        if not instructions and not language_name:
+        # Merge persona instructions before client instructions.
+        if persona_instructions and instructions:
+            merged = f"{persona_instructions}\n\n{instructions}"
+        elif persona_instructions:
+            merged = persona_instructions
+        else:
+            merged = instructions
+
+        if not merged and not language_name:
             return
 
         raw_tools = raw_tools or []
@@ -294,7 +303,7 @@ class BaseLanguageModelHandler(BaseHandler[LLMIn, LLMOut], ABC):
         if function_tools and tool_choice != "none":
             tool_section = build_tool_system_prompt(function_tools, text_only=not wants_audio)
             full_instructions = build_system_prompt(
-                instructions or "",
+                merged or "",
                 tool_section=tool_section,
                 language_name=language_name,
             )
@@ -302,7 +311,8 @@ class BaseLanguageModelHandler(BaseHandler[LLMIn, LLMOut], ABC):
             enter_code = ENTER_CODE
             end_code = END_CODE
         else:
-            full_instructions = build_system_prompt(instructions or "", language_name=language_name)
+            full_instructions = build_system_prompt(merged or "", language_name=language_name)
+            logger.info('system prompt = ', full_instructions)
             block_regex = None
             enter_code = None
             end_code = None
@@ -650,6 +660,7 @@ class BaseLanguageModelHandler(BaseHandler[LLMIn, LLMOut], ABC):
             ctx,
             response_wants_audio(response),
             language_name=lang_name,
+            persona_instructions=runtime_config.persona_instructions,
         )
 
         # Images the model sees this turn; only these are stripped on write-back,

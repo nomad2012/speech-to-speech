@@ -204,6 +204,7 @@ def config():
     behind a load balancer (so the browser uses the /api/session proxy + limiter),
     whether HF sign-in is available, and whether the user may instead set a direct
     s2s server URL. The LB address itself is intentionally NOT included."""
+    has_personas = bool(_load_personas_for_api())
     return {
         "search": bool(SERPER_KEY),
         "lb": bool(LOAD_BALANCER_URL),
@@ -218,6 +219,7 @@ def config():
         "iceServers": RTC_ICE_SERVERS,
         "startupGreeting": STARTUP_GREETING,
         "auth": AUTH_ENABLED,
+        "personas": has_personas,
     }
 
 
@@ -244,6 +246,45 @@ async def me(request: Request):
     if set_cookie:
         auth.set_anon_cookie(resp, set_cookie)
     return resp
+
+
+# Persona loading (lazy, on first request).
+_personas_cache: dict | None = None
+
+
+def _load_personas_for_api() -> list[dict]:
+    """Load personas and return a JSON-serializable list for the API."""
+    global _personas_cache
+    if _personas_cache is not None:
+        return _personas_cache
+
+    try:
+        from speech_to_speech.personas import load_personas
+
+        personas = load_personas("Personas")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to load personas: %s", exc)
+        _personas_cache = []
+        return _personas_cache
+
+    result = []
+    for name, p in sorted(personas.items()):
+        result.append({
+            "name": name,
+            "description": p.description or p.prompt[:80],
+            "avatar_color": p.avatar_color or "#888888",
+            "type": "omnivoice" if p.is_voice_cloned else "qwen3",
+            "has_reference_audio": p.has_reference_audio,
+        })
+
+    _personas_cache = result
+    return result
+
+
+@app.get("/api/personas")
+def personas():
+    """Return the list of available personas for the voice selector dropdown."""
+    return _load_personas_for_api()
 
 
 @app.post("/api/search")

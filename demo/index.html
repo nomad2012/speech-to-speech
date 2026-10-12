@@ -50,6 +50,12 @@
             </div>
           </div>
         </div>
+        <div class="topbar-center">
+          <div id="persona-banner" class="persona-banner" hidden>
+            <span class="persona-label">Chatting with</span>
+            <span id="persona-description" class="persona-description"></span>
+          </div>
+        </div>
         <div class="topbar-right">
           <!-- HF login chip / sign-in pill. Populated by ui/account.js; only
                shown when the deploy runs behind a load balancer with OAuth. -->
@@ -260,15 +266,7 @@
               <label class="field">
                 <span>Voice</span>
                 <select id="voice">
-                  <option value="Aiden" selected>Aiden</option>
-                  <option value="Ryan">Ryan</option>
-                  <option value="Dylan">Dylan</option>
-                  <option value="Eric">Eric</option>
-                  <option value="Ono_Anna">Ono_Anna</option>
-                  <option value="Serena">Serena</option>
-                  <option value="Sohee">Sohee</option>
-                  <option value="Uncle_Fu">Uncle_Fu</option>
-                  <option value="Vivian">Vivian</option>
+                  <option value="">Loading…</option>
                 </select>
               </label>
             </div>

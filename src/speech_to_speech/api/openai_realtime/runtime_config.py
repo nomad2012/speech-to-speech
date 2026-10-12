@@ -43,6 +43,10 @@ class RuntimeConfig(BaseModel):
         validate_default=True,
     )
     last_assistant_language: str | None = Field(default=None, exclude=True)
+    #: Selected persona name (from session update).
+    persona: str | None = Field(default=None)
+    #: Resolved persona system prompt text (set by service on persona change).
+    persona_instructions: str | None = Field(default=None, exclude=True)
 
     @field_validator("session", mode="after")
     @classmethod

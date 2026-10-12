@@ -457,7 +457,17 @@ async def _dispatch_client_event(
         transport.discard_pending_audio()
 
     elif isinstance(event, SessionUpdateEvent):
-        err = service.handle_session_update(session_id, event)
+        raw_session = raw.get("session")
+        logger.info(
+            "SessionUpdateEvent received: raw_session type=%s, keys=%s, persona=%r",
+            type(raw_session).__name__ if raw_session is not None else None,
+            list(raw_session.keys()) if isinstance(raw_session, dict) else None,
+            raw_session.get("persona") if isinstance(raw_session, dict) else None,
+        )
+        if isinstance(raw_session, dict):
+            err = service.handle_session_update(session_id, event, raw_session=raw_session)
+        else:
+            err = service.handle_session_update(session_id, event)
         if err:
             await send_correlated([err])
         else:

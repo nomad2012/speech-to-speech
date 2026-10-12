@@ -30,6 +30,7 @@ const STORAGE_KEYS = {
   // (in LB mode the browser never learns the LB address — it POSTs /api/session).
   directUrl: "s2s.ws.directUrl",
   voice: "s2s.ws.voice",
+  persona: "s2s.ws.persona",
   instructions: "s2s.ws.instructions",
   tools: "s2s.ws.tools",
   searchKey: "s2s.ws.searchKey",
@@ -111,6 +112,7 @@ function loadSettings() {
   return {
     directUrl: localStorage.getItem(STORAGE_KEYS.directUrl) || "",
     voice: localStorage.getItem(STORAGE_KEYS.voice) || DEFAULT_VOICE,
+    persona: localStorage.getItem(STORAGE_KEYS.persona) || "",
     instructions: localStorage.getItem(STORAGE_KEYS.instructions) || DEFAULT_INSTRUCTIONS,
     noiseGate: loadGateThreshold(),
     playbackBufferMs: normalizePlaybackBufferMs(localStorage.getItem(STORAGE_KEYS.playbackBufferMs)),
@@ -138,6 +140,7 @@ function loadGateThreshold() {
 function saveSettings(s) {
   localStorage.setItem(STORAGE_KEYS.directUrl, s.directUrl);
   localStorage.setItem(STORAGE_KEYS.voice, s.voice);
+  localStorage.setItem(STORAGE_KEYS.persona, s.persona || "");
   localStorage.setItem(STORAGE_KEYS.instructions, s.instructions);
   localStorage.setItem(STORAGE_KEYS.noiseGate, String(s.noiseGate));
   localStorage.setItem(STORAGE_KEYS.playbackBufferMs, String(s.playbackBufferMs));
@@ -219,6 +222,10 @@ const leaveQueueBtn = $("#leave-queue-btn");
 const settingsBtn = $("#settings-btn");
 /** @type {HTMLDialogElement} */
 const settingsModal = $("#settings-modal");
+/** @type {HTMLElement} */
+const personaBanner = $("#persona-banner");
+/** @type {HTMLElement} */
+const personaDescription = $("#persona-description");
 
 /** @type {HTMLButtonElement} */
 const aboutBtn = $("#about-btn");
@@ -462,7 +469,12 @@ function setCaption(text, kind = "") {
 
 function openSettings() {
   syncConnectionUi();
-  inputVoice.value = settings.voice;
+  // When personas are loaded, set the persona value; otherwise use the voice.
+  if (personas.length > 0 && settings.persona) {
+    inputVoice.value = settings.persona;
+  } else {
+    inputVoice.value = settings.voice || DEFAULT_VOICE;
+  }
   inputPlaybackBuffer.value = String(settings.playbackBufferMs);
   inputInstructions.value = settings.instructions;
   syncGateUi();
@@ -923,6 +935,103 @@ async function fetchConfig() {
   void account.refresh();
   syncToolsUi();
   syncConnectionUi();
+  // Load personas for the voice dropdown.
+  await loadPersonas();
+}
+
+/** Loaded persona list from /api/personas. */
+let personas = [];
+
+/** Update the persona banner at the top of the page. */
+function updatePersonaBanner() {
+  if (!personas.length || !settings.persona) {
+    personaBanner.hidden = true;
+    return;
+  }
+  const current = personas.find(p => p.name === settings.persona);
+  if (current && current.description) {
+    personaDescription.textContent = current.description;
+    personaBanner.hidden = false;
+  } else {
+    personaBanner.hidden = true;
+  }
+}
+
+/** Fetch available personas and populate the voice dropdown. */
+async function loadPersonas() {
+  try {
+    const res = await fetch("api/personas");
+    if (res.ok) {
+      personas = await res.json();
+      console.log(`[ui] loaded ${personas.length} persona(s)`, personas);
+    } else {
+      personas = [];
+      console.warn(`[ui] /api/personas returned ${res.status} ${res.statusText}`);
+    }
+  } catch (err) {
+    personas = [];
+    console.error(`[ui] failed to load personas:`, err);
+  }
+  populateVoiceDropdown();
+  updatePersonaBanner();
+}
+
+/** Populate the voice <select> from the loaded personas + Qwen3 fallback. */
+function populateVoiceDropdown() {
+  const sel = document.getElementById("voice");
+  if (!sel) {
+    console.error("[ui] voice select element not found in DOM");
+    return;
+  }
+  console.log(`[ui] populateVoiceDropdown: ${personas.length} persona(s), ${sel.options.length} option(s) now`);
+
+  // Clear existing options.
+  sel.innerHTML = "";
+
+  const currentVoice = settings.voice;
+  const currentPersona = settings.persona;
+
+  if (personas.length > 0) {
+    // Show personas. Group by type for clarity.
+    const omnivoice = personas.filter(p => p.type === "omnivoice");
+    const qwen3 = personas.filter(p => p.type === "qwen3");
+
+    if (omnivoice.length > 0) {
+      const og = document.createElement("optgroup");
+      og.label = "Omnivoice (voice-cloned)";
+      for (const p of omnivoice) {
+        const opt = document.createElement("option");
+        opt.value = p.name;
+        opt.textContent = p.description || p.name;
+        if (p.name === currentPersona) opt.selected = true;
+        og.appendChild(opt);
+      }
+      sel.appendChild(og);
+    }
+
+    if (qwen3.length > 0) {
+      const og = document.createElement("optgroup");
+      og.label = "Qwen3-TTS";
+      for (const p of qwen3) {
+        const opt = document.createElement("option");
+        opt.value = p.name;
+        opt.textContent = p.description || p.name;
+        if (p.name === currentPersona) opt.selected = true;
+        og.appendChild(opt);
+      }
+      sel.appendChild(og);
+    }
+  } else {
+    // Fallback to hardcoded Qwen3-TTS voices when no personas are available.
+    const defaultVoices = ["Aiden", "Ryan", "Dylan", "Eric", "Ono_Anna", "Serena", "Sohee", "Uncle_Fu", "Vivian"];
+    for (const v of defaultVoices) {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v;
+      if (v === currentVoice) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
 }
 
 /**
@@ -991,9 +1100,24 @@ function createResumedAudioContext() {
  *  transport select is only honoured while selectable, so a saved "webrtc"
  *  survives a visit to a deploy that can't offer it. */
 function readSettingsFromForm() {
+  const voiceValue = inputVoice.value || DEFAULT_VOICE;
+  // When personas are available, the dropdown value is a persona name.
+  // Otherwise it's a Qwen3-TTS voice name.
+  const hasPersonas = personas.length > 0;
+  let persona;
+  if (hasPersonas) {
+    persona = voiceValue;
+  } else {
+    // Personas not loaded yet — preserve the existing persona so it isn't
+    // accidentally cleared when the user changes the dropdown before the
+    // fetch completes (the dropdown gets repopulated later by
+    // populateVoiceDropdown).
+    persona = settings.persona;
+  }
   return {
     directUrl: allowDirect && !pinnedUrl ? inputLbUrl.value.trim() : settings.directUrl,
-    voice: inputVoice.value || DEFAULT_VOICE,
+    voice: hasPersonas ? DEFAULT_VOICE : voiceValue,
+    persona,
     instructions: inputInstructions.value.trim() || DEFAULT_INSTRUCTIONS,
     noiseGate: readGateThreshold(),
     playbackBufferMs: normalizePlaybackBufferMs(inputPlaybackBuffer.value),
@@ -1090,13 +1214,17 @@ settingsForm.addEventListener("submit", (event) => {
 
   settings = readSettingsFromForm();
   saveSettings(settings);
+  updatePersonaBanner();
 
   // Voice + instructions can apply to a live session without reconnecting; a
   // changed connection URL only takes effect on the next restart. Speaker
   // output can switch live when the browser supports AudioContext.setSinkId;
   // mic device changes need a Restart (new getUserMedia stream).
+  // When personas are available, persona switching is live via session.update.
   if (client && LIVE_STATES.has(currentState)) {
-    client.updateSession({ voice: settings.voice, instructions: settings.instructions });
+    const update = { voice: settings.voice, instructions: settings.instructions };
+    if (settings.persona) update.persona = settings.persona;
+    client.updateSession(update);
     if (typeof client.setAudioOutputDevice === "function") {
       void client.setAudioOutputDevice(settings.audioOutputId);
     }
@@ -1122,6 +1250,7 @@ restartBtn.addEventListener("click", async () => {
   if (currentState === "connecting") return; // a connect is already underway
   settings = readSettingsFromForm();
   saveSettings(settings);
+  console.log(`[ui] restart: voice=${settings.voice}, persona=${settings.persona}, instructions=${settings.instructions}`);
   if (missingServerUrl()) { promptServerUrl(); return; } // keep settings open
   settingsModal.close();
   // Grab the AudioContext NOW, inside the click gesture — teardown() awaits, and
@@ -1416,6 +1545,7 @@ async function doStart(audioContext = null) {
 
   const common = {
     voice: settings.voice,
+    persona: settings.persona || undefined,
     instructions: settings.instructions,
     startupGreeting,
     acquireMic: acquireMicStream,
@@ -1429,6 +1559,7 @@ async function doStart(audioContext = null) {
     },
     ...(audioContext ? { audioContext } : {}),
   };
+  console.log(`[ui] doStart: voice=${settings.voice}, persona=${settings.persona || '(none)'}`);
   const c = target === null
     ? new S2sRealtimeClient({
         transport: "webrtc",

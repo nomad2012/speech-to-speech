@@ -11,6 +11,7 @@ import scipy.signal
 from rich.console import Console
 
 from speech_to_speech.baseHandler import BaseHandler
+from speech_to_speech.personas import Persona
 from speech_to_speech.pipeline.cancel_scope import CancelScope
 from speech_to_speech.pipeline.handler_types import TTSIn, TTSOut
 from speech_to_speech.pipeline.messages import AUDIO_RESPONSE_DONE, EndOfResponse
@@ -34,6 +35,7 @@ class OmniVoiceTTSHandler(BaseHandler[TTSIn, TTSOut]):
         ref_text: str | None = None,
         voice_clone_prompt: str | None = None,
         ref_voices_dir: str | None = None,
+        personas: dict[str, Persona] | None = None,
         instruct: str | None = None,
         language: str | None = None,
         num_steps: int = 32,
@@ -108,7 +110,66 @@ class OmniVoiceTTSHandler(BaseHandler[TTSIn, TTSOut]):
                 "Prepared OmniVoice clone prompts for languages: %s", ", ".join(self.language_voice_clone_prompts)
             )
 
+        # Pre-build VoiceClonePrompt objects for personas with reference audio.
+        self.persona_prompts: dict[str, Any] = {}
+        self.current_persona: str | None = None
+        if personas:
+            for persona_name, persona in personas.items():
+                if persona.is_voice_cloned and persona.ref_audio_path is not None:
+                    try:
+                        self.persona_prompts[persona_name] = self.model.create_voice_clone_prompt(
+                            ref_audio=str(persona.ref_audio_path),
+                            ref_text=persona.ref_text,
+                        )
+                        logger.info(
+                            "Pre-built persona clone prompt for %r (%s)",
+                            persona_name,
+                            persona.ref_audio_path.name,
+                        )
+                    except Exception as exc:  # pragma: no cover - defensive
+                        logger.warning(
+                            "Failed to build persona clone prompt for %r: %s",
+                            persona_name,
+                            exc,
+                        )
+            if self.persona_prompts:
+                logger.info(
+                    "Pre-built %d persona clone prompt(s)", len(self.persona_prompts)
+                )
+
+    def switch_persona(self, persona_name: str | None) -> None:
+        """Switch the active voice clone prompt to a persona's pre-built prompt.
+
+        Args:
+            persona_name: Name of the persona to activate, or ``None`` to
+                revert to the default CLI ``ref_audio``/``ref_text`` prompt.
+        """
+        logger.info(
+            "OmniVoice.switch_persona(%r): current=%r, available=%s",
+            persona_name,
+            self.current_persona,
+            list(self.persona_prompts.keys()),
+        )
+        if persona_name is None:
+            self.current_persona = None
+            logger.info("OmniVoice: switched away from persona (default voice active)")
+            return
+
+        if persona_name not in self.persona_prompts:
+            logger.warning(
+                "OmniVoice: unknown persona %r; available: %s",
+                persona_name,
+                ", ".join(sorted(self.persona_prompts)),
+            )
+            return
+
+        self.current_persona = persona_name
+        logger.info("OmniVoice: switched to persona %r (prompt loaded)", persona_name)
+
     def _voice_clone_prompt_for(self, language: str | None) -> Any:
+        # Persona prompt takes priority when active.
+        if self.current_persona and self.current_persona in self.persona_prompts:
+            return self.persona_prompts[self.current_persona]
         if language and self.language_voice_clone_prompts:
             from omnivoice.utils.lang_map import LANG_NAME_TO_ID
 
