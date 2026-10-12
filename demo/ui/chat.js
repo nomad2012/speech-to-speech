@@ -626,8 +626,17 @@ export class ChatView {
       return;
     }
 
-    // Any other terminal close (completed / failed / incomplete / …): just
-    // release the map entry. The bubble already auto-dismisses on its timer and
+    // Non-cancelled response: extend the bubble lifetime to cover the audio
+    // playback. Estimate speech duration at ~3 chars/sec (≈180 wpm), add a
+    // 2 s buffer after the estimated audio ends.
+    const bodyEl = hist?.querySelector(".hist-body");
+    const text = bodyEl?.textContent || transcript || "";
+    const estimatedAudioMs = Math.max(1000, Math.ceil(text.length / 3) * 1000);
+    if (entry?.bubble) {
+      this._bumpDismiss(entry.bubble, estimatedAudioMs + 2000);
+    }
+
+    // Release the map entry. The bubble already auto-dismisses on its timer and
     // the history row persists as the conversation log. Crucially we do NOT
     // touch user state here — that lifecycle is fully independent.
     this._asstByResp.delete(responseId);

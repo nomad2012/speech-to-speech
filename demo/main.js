@@ -226,6 +226,8 @@ const settingsModal = $("#settings-modal");
 const personaBanner = $("#persona-banner");
 /** @type {HTMLElement} */
 const personaDescription = $("#persona-description");
+/** @type {HTMLImageElement} */
+const personaAvatar = $("#persona-avatar");
 
 /** @type {HTMLButtonElement} */
 const aboutBtn = $("#about-btn");
@@ -951,6 +953,13 @@ function updatePersonaBanner() {
   const current = personas.find(p => p.name === settings.persona);
   if (current && current.description) {
     personaDescription.textContent = current.description;
+    if (current.avatar_url) {
+      personaAvatar.src = current.avatar_url;
+      personaAvatar.alt = current.name;
+      personaAvatar.hidden = false;
+    } else {
+      personaAvatar.hidden = true;
+    }
     personaBanner.hidden = false;
   } else {
     personaBanner.hidden = true;
@@ -1250,6 +1259,7 @@ restartBtn.addEventListener("click", async () => {
   if (currentState === "connecting") return; // a connect is already underway
   settings = readSettingsFromForm();
   saveSettings(settings);
+  updatePersonaBanner();
   console.log(`[ui] restart: voice=${settings.voice}, persona=${settings.persona}, instructions=${settings.instructions}`);
   if (missingServerUrl()) { promptServerUrl(); return; } // keep settings open
   settingsModal.close();

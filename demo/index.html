@@ -50,12 +50,7 @@
             </div>
           </div>
         </div>
-        <div class="topbar-center">
-          <div id="persona-banner" class="persona-banner" hidden>
-            <span class="persona-label">Chatting with</span>
-            <span id="persona-description" class="persona-description"></span>
-          </div>
-        </div>
+        <div class="topbar-center"></div>
         <div class="topbar-right">
           <!-- HF login chip / sign-in pill. Populated by ui/account.js; only
                shown when the deploy runs behind a load balancer with OAuth. -->
@@ -77,6 +72,13 @@
       </header>
 
       <main class="stage">
+        <div id="persona-banner" class="persona-banner stage-persona" hidden>
+          <img id="persona-avatar" class="persona-avatar" src="" alt="" hidden />
+          <div class="persona-banner-content">
+            <span class="persona-label">Chatting with</span>
+            <span id="persona-description" class="persona-description"></span>
+          </div>
+        </div>
         <div class="orb-wrap">
           <div id="mic-gate" class="mic-gate">
             <svg id="mic-gate-arc" class="mic-gate-arc" viewBox="0 0 100 100" aria-hidden="true">

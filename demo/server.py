@@ -275,6 +275,7 @@ def _load_personas_for_api() -> list[dict]:
             "avatar_color": p.avatar_color or "#888888",
             "type": "omnivoice" if p.is_voice_cloned else "qwen3",
             "has_reference_audio": p.has_reference_audio,
+            "avatar_url": f"/api/personas/{name}/avatar" if p.avatar_path else None,
         })
 
     _personas_cache = result
@@ -285,6 +286,31 @@ def _load_personas_for_api() -> list[dict]:
 def personas():
     """Return the list of available personas for the voice selector dropdown."""
     return _load_personas_for_api()
+
+
+@app.get("/api/personas/{persona_name}/avatar")
+def persona_avatar(persona_name: str):
+    """Serve the avatar image for a persona."""
+    try:
+        from speech_to_speech.personas import load_personas
+
+        personas = load_personas("Personas")
+        p = personas.get(persona_name)
+        if p is None or p.avatar_path is None:
+            raise HTTPException(status_code=404, detail="Avatar not found.")
+        avatar_path = p.avatar_path
+        if not avatar_path.is_file():
+            raise HTTPException(status_code=404, detail="Avatar file missing.")
+
+        # Determine MIME type from extension.
+        ext = avatar_path.suffix.lower()
+        media_type = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+        return FileResponse(avatar_path, media_type=media_type)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to serve avatar for %r: %s", persona_name, exc)
+        raise HTTPException(status_code=404, detail="Avatar not found.")
 
 
 @app.post("/api/search")

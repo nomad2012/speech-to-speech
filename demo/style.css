@@ -196,10 +196,7 @@ a:hover {
 
 .persona-banner {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-dim);
+  flex-direction: column;
 }
 
 .persona-label {
@@ -214,6 +211,34 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Persona avatar image — circular, centered above the text */
+.persona-avatar {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  align-self: center;
+}
+
+/* Text content below the avatar */
+.persona-banner-content {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 15px;
+  color: var(--text-dim);
+}
+
+/* Persona banner in the stage (above the orb) */
+.stage .persona-banner {
+  margin-bottom: 12px;
 }
 
 .topbar-right {
