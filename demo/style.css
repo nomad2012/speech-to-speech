@@ -215,8 +215,8 @@ a:hover {
 
 /* Persona avatar image — circular, centered above the text */
 .persona-avatar {
-  width: 160px;
-  height: 160px;
+  width: 200px;
+  height: 200px;
   border-radius: 50%;
   object-fit: cover;
   object-position: center top;
@@ -1409,7 +1409,7 @@ body.cam-on .footer {
   padding: 0;
   background: var(--bg-elev);
   color: var(--text);
-  width: min(440px, 92vw);
+  width: min(600px, 92vw);
   box-shadow: var(--shadow-soft);
 }
 .modal::backdrop {
@@ -1603,6 +1603,14 @@ body.cam-on .footer {
   justify-content: space-between;
   gap: 12px;
   padding-top: 6px;
+}
+.modal-hint {
+  display: block;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.4;
+  padding-top: 2px;
 }
 
 .btn {

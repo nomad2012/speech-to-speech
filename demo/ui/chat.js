@@ -151,10 +151,10 @@ export class ChatView {
       el = this._buildMessageEl({ container: "bubble", prefix: "bubble", role, text });
     }
     this._bubbleStack.appendChild(el);
-    // Cap the stack at 3, but never evict the bubble the caller is still
+    // Cap the stack at 2, but never evict the bubble the caller is still
     // actively updating (the live user bubble) — drop the next-oldest instead.
     const visible = /** @type {HTMLElement[]} */ ([...this._bubbleStack.querySelectorAll(".bubble:not(.out)")]);
-    if (visible.length > 3) {
+    if (visible.length > 2) {
       this._dismissBubble(visible.find((b) => b !== this._activeUserBubble) ?? visible[0]);
     }
     requestAnimationFrame(() => el.classList.add("in"));

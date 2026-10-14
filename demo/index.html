@@ -271,15 +271,14 @@
                   <option value="">Loading…</option>
                 </select>
               </label>
+              <label class="field">
+                <span>Microphone</span>
+                <select id="audio-input">
+                  <option value="">System default</option>
+                </select>
+                <small>Next conversation (or Restart).</small>
+              </label>
             </div>
-
-            <label class="field">
-              <span>Microphone</span>
-              <select id="audio-input">
-                <option value="">System default</option>
-              </select>
-              <small>Applies on the next conversation (or Restart).</small>
-            </label>
 
             <label class="field" id="audio-output-field">
               <span>Speakers</span>
@@ -291,63 +290,62 @@
               </small>
             </label>
 
-            <label class="field" id="playback-buffer-field">
-              <span>Playback startup buffer (ms)</span>
-              <input id="playback-buffer-ms" type="number" min="0" step="any" aria-describedby="playback-buffer-hint" />
-              <small id="playback-buffer-hint">
-                WebSocket only. 0 starts immediately; larger values delay playback to absorb delivery gaps.
-                Applies on the next conversation.
-              </small>
-            </label>
+            <div class="field-row">
+              <label class="field" id="playback-buffer-field">
+                <span>Playback buffer (ms)</span>
+                <input id="playback-buffer-ms" type="number" min="0" step="any" aria-describedby="playback-buffer-hint" />
+                <small id="playback-buffer-hint">
+                  WebSocket only. 0 = immediate; larger values absorb delivery gaps.
+                </small>
+              </label>
 
-            <!-- WS-only: the gate runs in the WebSocket capture worklet; the
-                 WebRTC mic path sends the raw track, so this hides there. -->
-            <div class="field" id="gate-field">
-              <span class="field-head">
-                Noise gate
-                <span id="gate-value" class="field-value">Off</span>
-              </span>
-              <div class="gate">
-                <div class="gate-track" aria-hidden="true">
-                  <div id="gate-meter-fill" class="gate-meter-fill"></div>
-                  <input
-                    id="noise-gate"
-                    type="range"
-                    min="-66"
-                    max="-3"
-                    step="1"
-                    value="-50"
-                    aria-label="Noise gate threshold"
-                  />
+              <!-- WS-only: the gate runs in the WebSocket capture worklet; the
+                   WebRTC mic path sends the raw track, so this hides there. -->
+              <div class="field" id="gate-field">
+                <span class="field-head">
+                  Noise gate
+                  <span id="gate-value" class="field-value">Off</span>
+                </span>
+                <div class="gate">
+                  <div class="gate-track" aria-hidden="true">
+                    <div id="gate-meter-fill" class="gate-meter-fill"></div>
+                    <input
+                      id="noise-gate"
+                      type="range"
+                      min="-66"
+                      max="-3"
+                      step="1"
+                      value="-50"
+                      aria-label="Noise gate threshold"
+                    />
+                  </div>
+                  <div class="gate-ends">
+                    <span>Off</span>
+                    <span>−3 dB</span>
+                  </div>
                 </div>
-                <div class="gate-ends">
-                  <span>Off</span>
-                  <span>−3 dB</span>
-                </div>
+                <small>
+                  Mutes mic below the handle. Slide left to off; live input bar in a call.
+                </small>
               </div>
-              <small>
-                Mutes the mic below the handle so room noise isn't sent. Slide fully
-                left to turn it off; the bar shows your live input while in a call.
-              </small>
             </div>
 
             <label class="field">
               <span>Instructions</span>
-              <textarea id="instructions" rows="5" placeholder="You are a friendly voice assistant..."></textarea>
+              <textarea id="instructions" rows="3" placeholder="You are a friendly voice assistant..."></textarea>
             </label>
-
-            <div class="field">
-              <button id="restart-conversation" type="button" class="btn primary wide" disabled>
-                Restart conversation with these settings
-              </button>
-              <small id="restart-hint">Connect first, then come back here to apply live changes.</small>
-            </div>
           </section>
         </div>
 
         <footer class="modal-footer">
+          <button id="restart-conversation" type="button" class="btn" disabled>
+            Restart conversation
+          </button>
           <button id="settings-save" type="submit" class="btn primary" value="save">Save</button>
         </footer>
+        <small id="restart-hint" class="modal-hint">
+          Connect first, then change settings above and click Restart.
+        </small>
       </form>
     </dialog>
 
