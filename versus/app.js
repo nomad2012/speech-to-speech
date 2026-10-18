@@ -34,11 +34,13 @@ function populatePersonas(personas) {
         const optA = new Option(p.description || p.name, p.name);
         optA.dataset.language = p.language;
         optA.dataset.color = p.avatar_color || '#000';
+        optA.dataset.avatarUrl = p.avatar_url || '';
         selectA.add(optA);
 
         const optB = new Option(p.description || p.name, p.name);
         optB.dataset.language = p.language;
         optB.dataset.color = p.avatar_color || '#000';
+        optB.dataset.avatarUrl = p.avatar_url || '';
         selectB.add(optB);
     });
 
@@ -83,13 +85,17 @@ async function startSimulation() {
         return;
     }
 
-    document.getElementById('selection').classList.add('hidden');
-    document.getElementById('topic').classList.add('hidden');
-    document.getElementById('conversation').classList.remove('hidden');
+    // Set up avatars
+    setupAvatars(selectedPersonaA, selectedPersonaB);
+
+    // Switch to duet view
+    document.getElementById('setup-container').classList.add('hidden');
+    document.getElementById('duet-container').classList.remove('hidden');
 
     updateStatus('Starting simulation...');
 
     try {
+        const turns = parseInt(document.getElementById('turns-input').value) || 6;
         // Create simulation
         const res = await fetch('/api/simulations', {
             method: 'POST',
@@ -98,7 +104,7 @@ async function startSimulation() {
                 persona_a: selectedPersonaA.name,
                 persona_b: selectedPersonaB.name,
                 topic: topic,
-                turns: parseInt(document.getElementById('turns').value) || 6,
+                turns: turns,
             })
         });
 
@@ -118,12 +124,33 @@ async function startSimulation() {
     }
 }
 
+// --- Avatars ---
+
+function setupAvatars(personaA, personaB) {
+    const imgA = document.getElementById('avatar-a');
+    const imgB = document.getElementById('avatar-b');
+    const labelA = document.getElementById('avatar-label-a');
+    const labelB = document.getElementById('avatar-label-b');
+
+    // Persona A
+    imgA.src = personaA.avatar_url || '';
+    imgA.alt = personaA.description || personaA.name;
+    labelA.textContent = personaA.description || personaA.name;
+
+    // Persona B
+    imgB.src = personaB.avatar_url || '';
+    imgB.alt = personaB.description || personaB.name;
+    labelB.textContent = personaB.description || personaB.name;
+}
+
 // --- WebSocket handling ---
 
 function connectWebSocket(simId, topic) {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${location.host}/api/simulations/${simId}/stream`);
     currentWebSocket = ws;
+
+    let hasReceivedDone = false;
 
     ws.onopen = () => {
         updateStatus('Connected — conversation in progress');
@@ -137,6 +164,7 @@ function connectWebSocket(simId, topic) {
                     await handleTurn(data);
                     break;
                 case 'done':
+                    hasReceivedDone = true;
                     handleDone(data);
                     break;
                 case 'error':
@@ -149,11 +177,13 @@ function connectWebSocket(simId, topic) {
     };
 
     ws.onclose = () => {
-        updateStatus('Simulation ended');
+        if (!hasReceivedDone) {
+            updateStatus('Simulation ended');
+        }
     };
 
     ws.onerror = () => {
-        updateStatus('WebSocket error');
+        // No need to set status here — onmessage or onclose will handle it
     };
 }
 
@@ -213,12 +243,53 @@ function playAudio(base64Audio) {
 
 function handleDone(doneData) {
     updateStatus(`Simulation ${doneData.reason}`);
-    document.getElementById('turns').innerHTML += `
-        <div class="turn done">
-            <p>Simulation ended: <strong>${doneData.reason}</strong>
-            ${doneData.message ? ` — ${escapeHtml(doneData.message)}` : ''}</p>
-        </div>
-    `;
+
+    // Show a "play again" button
+    const turnsEl = document.getElementById('turns');
+    const doneDiv = document.createElement('div');
+    doneDiv.className = 'turn done';
+
+    const msgParagraph = document.createElement('p');
+    msgParagraph.textContent = `Simulation ended: ${doneData.reason}`;
+    if (doneData.message) {
+        msgParagraph.textContent += ` — ${doneData.message}`;
+    }
+    doneDiv.appendChild(msgParagraph);
+
+    const playAgainBtn = document.createElement('button');
+    playAgainBtn.className = 'play-again-btn';
+    playAgainBtn.textContent = 'Play Again';
+    playAgainBtn.addEventListener('click', () => {
+        console.log('Play Again clicked!');
+        resetToStart();
+    });
+    doneDiv.appendChild(playAgainBtn);
+
+    turnsEl.appendChild(doneDiv);
+
+    // Scroll to the done message
+    doneDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function resetToStart() {
+    // Clear the conversation history
+    const turnsEl = document.getElementById('turns');
+    turnsEl.innerHTML = '';
+
+    // Switch back to setup view
+    document.getElementById('setup-container').classList.remove('hidden');
+    document.getElementById('duet-container').classList.add('hidden');
+
+    // Clear the topic input
+    document.getElementById('topic-input').value = '';
+
+    // Clear avatars
+    document.getElementById('avatar-a').src = '';
+    document.getElementById('avatar-b').src = '';
+    document.getElementById('avatar-label-a').textContent = '';
+    document.getElementById('avatar-label-b').textContent = '';
+
+    updateStatus('Select personas and enter a topic to start');
 }
 
 // --- Utilities ---

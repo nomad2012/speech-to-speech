@@ -12,40 +12,62 @@
         <p>Two personas. One conversation. You start it.</p>
     </header>
 
-    <main>
-        <!-- Persona Selection -->
-        <section id="selection">
-            <div class="persona-select">
-                <label for="persona-a">Persona A</label>
-                <select id="persona-a"></select>
-            </div>
-            <div class="persona-select">
-                <label for="persona-b">Persona B</label>
-                <select id="persona-b"></select>
-            </div>
-            <div class="persona-select">
-                <label for="turns">Turns</label>
-                <input type="number" id="turns" min="2" max="20" value="6">
-            </div>
-        </section>
+    <!-- Setup section (shown before simulation starts) -->
+    <div id="setup-container">
+        <main>
+            <!-- Persona Selection -->
+            <section id="selection">
+                <div class="persona-select">
+                    <label for="persona-a">Persona A</label>
+                    <select id="persona-a"></select>
+                </div>
+                <div class="persona-select">
+                    <label for="persona-b">Persona B</label>
+                    <select id="persona-b"></select>
+                </div>
+                <div class="persona-select">
+                    <label for="turns-input">Turns</label>
+                    <input type="number" id="turns-input" min="2" max="20" value="6">
+                </div>
+            </section>
 
-        <!-- Topic Input -->
-        <section id="topic">
-            <label for="topic-input">Your prompt</label>
-            <textarea id="topic-input" placeholder="What would you like them to discuss?" rows="3"></textarea>
-            <button id="start-btn" class="start-button" disabled>Start Duet</button>
-        </section>
+            <!-- Topic Input -->
+            <section id="topic">
+                <label for="topic-input">Your prompt</label>
+                <textarea id="topic-input" placeholder="What would you like them to discuss?" rows="3"></textarea>
+                <button id="start-btn" class="start-button" disabled>Start Duet</button>
+            </section>
+        </main>
+    </div>
 
-        <!-- Conversation Display -->
-        <section id="conversation" class="hidden">
-            <div id="turns"></div>
-        </section>
-
-        <!-- Status -->
-        <div id="status-bar">
-            <span id="status-text">Select personas and enter a topic to start</span>
+    <!-- Conversation section (shown during simulation) -->
+    <div id="duet-container" class="hidden">
+        <!-- Left avatar: Persona A -->
+        <div class="avatar-column avatar-a">
+            <div class="avatar-wrapper">
+                <img id="avatar-a" class="avatar-img" src="" alt="" />
+                <div id="avatar-label-a" class="avatar-label"></div>
+            </div>
         </div>
-    </main>
+
+        <!-- Center: scrollable conversation -->
+        <div class="turns-column">
+            <div id="turns" class="turns"></div>
+        </div>
+
+        <!-- Right avatar: Persona B -->
+        <div class="avatar-column avatar-b">
+            <div class="avatar-wrapper">
+                <img id="avatar-b" class="avatar-img" src="" alt="" />
+                <div id="avatar-label-b" class="avatar-label"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status -->
+    <div id="status-bar">
+        <span id="status-text">Select personas and enter a topic to start</span>
+    </div>
 
     <script src="app.js"></script>
 </body>

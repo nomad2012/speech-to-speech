@@ -8,6 +8,7 @@ Endpoints:
 """
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 import base64
@@ -51,6 +52,7 @@ class PersonaInfo(BaseModel):
     description: str
     language: str
     avatar_color: str = ""
+    avatar_url: str = ""
 
 
 class PersonasResponse(BaseModel):
@@ -89,11 +91,31 @@ async def list_personas():
                 name=name,
                 description=p.description or name,
                 language=p.language,
-                avatar_color=p.avatar_color,
+                avatar_color=p.avatar_color or "#888888",
+                avatar_url=f"/api/personas/{name}/avatar" if p.avatar_path else "",
             )
             for name, p in personas.items()
         ]
     )
+
+
+@app.get("/api/personas/{persona_name}/avatar")
+async def persona_avatar(persona_name: str):
+    """Serve the avatar image for a persona."""
+    if not hasattr(app, "engine"):
+        raise HTTPException(status_code=503, detail="Engine not initialized")
+
+    persona = app.engine.personas.get(persona_name)
+    if persona is None or persona.avatar_path is None:
+        raise HTTPException(status_code=404, detail="No avatar for persona")
+
+    avatar_path = persona.avatar_path
+    if not avatar_path.is_file():
+        raise HTTPException(status_code=404, detail="Avatar file not found")
+
+    ext = avatar_path.suffix.lower()
+    media_type = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}.get(ext, "image/jpeg")
+    return FileResponse(avatar_path, media_type=media_type)
 
 
 @app.post("/api/simulations", status_code=201)
