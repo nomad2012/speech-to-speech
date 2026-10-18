@@ -19,6 +19,9 @@ import uuid
 from typing import Optional
 
 from speech_to_speech.persona_sim import SimConfig, DuetEngine, build_engine
+from speech_to_speech.persona_sim.engine import PIPELINE_SAMPLE_RATE
+
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +156,9 @@ async def simulation_stream(websocket: WebSocket, simulation_id: str):
 
     Protocol:
     - Client sends nothing (simulation already started with topic from POST).
-    - Server sends turns: {"type": "turn", "turn": N, "speaker": "...", "text": "...", "audio": "base64...", "format": "wav/16000"}
+    - Server sends turn start: {"type": "turn_start", "turn": N, "speaker": "...", "text": "..."}
+    - Server sends audio chunks: {"type": "audio_chunk", "chunk": "base64wav..."}
+    - Server sends end: {"type": "audio_end", "turn": N}
     - Client sends back between turns: {"type": "playback_done", "turn": N}
     - Client can stop: {"type": "stop"}
     - Server ends with: {"type": "done", "reason": "completed"|"stopped"|"error"}
@@ -168,41 +173,110 @@ async def simulation_stream(websocket: WebSocket, simulation_id: str):
 
     try:
         engine = app.engine
+        engine_instance: DuetEngine = engine
 
         # Update simulation status
         sim["status"] = "running"
         logger.info("Simulation %s started with topic: %s", simulation_id[:8], sim["topic"][:100])
 
-        # Step 1: Run the simulation turn by turn
-        turn_number = 0
-        async for turn in engine.run(
-            persona_a=sim["persona_a"],
-            persona_b=sim["persona_b"],
-            topic=sim["topic"],
-            turns=sim["turns"],
-        ):
-            turn_number += 1
+        # Run the simulation turn by turn using the streaming interface
+        persona_a = sim["persona_a"]
+        persona_b = sim["persona_b"]
+        topic = sim["topic"]
+        max_turns = sim["turns"]
 
-            # Encode audio as base64 WAV
-            audio_base64 = _pcm16_to_wav_base64(turn.audio, turn.sample_rate)
+        # Two separate histories — one per persona.
+        history_a: list[dict] = []
+        history_b: list[dict] = []
 
-            # Send turn to client
-            await websocket.send_json({
-                "type": "turn",
-                "turn": turn_number,
-                "speaker": turn.speaker,
-                "text": turn.text,
-                "audio": audio_base64,
-                "format": "wav/16000",
-            })
+        for index in range(max_turns):
+            if engine_instance._stop.is_set():
+                break
+
+            # Determine speaker (A, B, A, B, ...)
+            if index % 2 == 0:
+                speaker = persona_a
+            else:
+                speaker = persona_b
+
+            # Choose the correct history for this persona and the other persona name.
+            if index % 2 == 0:
+                history = history_a
+                cross_history = history_b
+                other_persona = persona_b
+            else:
+                history = history_b
+                cross_history = history_a
+                other_persona = persona_a
+
+            turn_number = index + 1
+
+            # Execute the turn using streaming interface
+            full_text = ""
+            first_chunk = True
+            try:
+                async for text_so_far, audio_chunk in engine_instance._run_turn_streaming(
+                    speaker, history, other_persona
+                ):
+                    full_text = text_so_far
+
+                    # Send turn_start only ONCE (before any audio)
+                    if first_chunk:
+                        first_chunk = False
+                        await websocket.send_json({
+                            "type": "turn_start",
+                            "turn": turn_number,
+                            "speaker": speaker,
+                            "text": full_text,
+                        })
+
+                    # Encode audio chunk as base64 WAV
+                    audio_base64 = _pcm16_to_wav_base64(audio_chunk, PIPELINE_SAMPLE_RATE)
+                    logger.debug(
+                        "SENT chunk turn=%d speaker=%s size=%d",
+                        turn_number, speaker, len(audio_base64),
+                    )
+
+                    # Include partial text so the browser can append sentences incrementally
+                    await websocket.send_json({
+                        "type": "audio_chunk",
+                        "turn": turn_number,
+                        "chunk": audio_base64,
+                        "text": full_text,
+                    })
+
+                await websocket.send_json({
+                    "type": "audio_end",
+                    "turn": turn_number,
+                })
+
+                if not full_text.strip():
+                    continue
+
+                # Cross-over: append to histories
+                history.append({"role": "assistant", "content": full_text})
+                cross_history.append({"role": "user", "content": full_text})
+
+                if len(history_a) > engine_instance.chat_size:
+                    history_a = history_a[-engine_instance.chat_size:]
+                if len(history_b) > engine_instance.chat_size:
+                    history_b = history_b[-engine_instance.chat_size:]
+
+            except RuntimeError as exc:
+                logger.error("Turn %d (%s) failed: %s", turn_number, speaker, exc)
+                continue
 
             # Wait for playback_done from client
-            response = await websocket.receive_json()
+            try:
+                response = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning("Timeout waiting for playback_done on turn %d", turn_number)
+                continue
+
             if response.get("type") == "stop":
-                engine.stop()
+                engine_instance.stop()
                 await websocket.send_json({"type": "done", "reason": "stopped"})
                 break
-            # playback_done is expected — continue to next turn
 
         if sim["status"] == "running":
             sim["status"] = "completed"
@@ -210,7 +284,7 @@ async def simulation_stream(websocket: WebSocket, simulation_id: str):
             logger.info("Simulation %s completed", simulation_id[:8])
 
     except WebSocketDisconnect:
-        engine.stop()
+        engine_instance.stop()
         sim["status"] = "stopped"
         logger.info("Simulation %s: client disconnected", simulation_id[:8])
     except Exception as e:

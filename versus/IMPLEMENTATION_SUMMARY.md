@@ -150,3 +150,54 @@ Then open `http://localhost:7861` in a browser.
    conversation flow.
 5. **WAV container encoding**: Base64-encoded WAV files for browser-compatible
    audio (Web Audio API `Audio` element).
+
+---
+
+## UI Enhancements (v2 — separate commit)
+
+### Bug Fixes
+
+- **Duplicate `id="turns"`**: Two HTML elements shared the same ID — the
+  number-of-turns input and the conversation container div. `getElementById`
+  returned the first one (the input), causing the "Play Again" button to be
+  appended inside the number input instead of the conversation area. Renamed
+  the input to `id="turns-input"`.
+
+### New Features
+
+#### 1. Play Again Button
+- When a simulation ends, a **"Play Again"** button appears in the done
+  message area.
+- Clicking it resets the UI back to the persona selection / topic input state.
+- The simulation's WebSocket is properly closed before reset.
+- Uses `simulationEnded` flag to prevent `onclose` from overriding the done
+  message in the race condition window.
+
+#### 2. Dual Avatar Layout
+- **Two-column layout**: Persona A avatar (left), conversation (center),
+  Persona B avatar (right).
+- Avatars show each persona's image (`image.jpg` / `image.jpeg`) as a large
+  circular element with colored border matching the persona's accent color.
+- Persona names appear underneath each avatar.
+- Avatar endpoint added: `GET /api/personas/{name}/avatar` serves the persona
+  image with correct MIME type.
+
+#### 3. Fixed-Avatar Scroll Layout
+- The page is structured as a full-viewport flex column (`overflow: hidden`).
+- Two separate containers: `#setup-container` (scrollable, before simulation)
+  and `#duet-container` (fixed height, avatars pinned).
+- In duet mode, **only the center turns column scrolls** — avatars stay
+  pinned in place at top and bottom.
+- Styled scrollbar on the turns column (thin, dark-themed).
+- Responsive: on screens < 640px, avatars stack horizontally above the
+  conversation.
+
+### Files Changed (v2)
+
+| File | Change |
+|------|--------|
+| `versus/index.html` | Two-container layout (`#setup-container`, `#duet-container`), avatar elements |
+| `versus/style.css` | Full rewrite: flex-box layout, fixed avatars, scrollable turns column |
+| `versus/app.js` | Avatar setup, `simulationEnded` flag, dual-container toggle |
+| `versus/server.py` | `avatar_url` field on `PersonaInfo`, `/api/personas/{name}/avatar` endpoint |
+

@@ -14,6 +14,11 @@ let selectedPersonaA = null;
 let selectedPersonaB = null;
 let currentWebSocket = null;
 
+// Audio queue for sequential playback
+let audioQueue = [];
+let currentAudioEl = null;
+let pendingPlaybackDoneTurn = null;
+
 // --- Load personas on startup ---
 
 async function loadPersonas() {
@@ -145,12 +150,15 @@ function setupAvatars(personaA, personaB) {
 
 // --- WebSocket handling ---
 
+let simulationEnded = false;
 function connectWebSocket(simId, topic) {
+    simulationEnded = false;
+    audioQueue = [];
+    currentAudioEl = null;
+    pendingPlaybackDoneTurn = null;
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${location.host}/api/simulations/${simId}/stream`);
     currentWebSocket = ws;
-
-    let hasReceivedDone = false;
 
     ws.onopen = () => {
         updateStatus('Connected — conversation in progress');
@@ -160,11 +168,28 @@ function connectWebSocket(simId, topic) {
         try {
             const data = JSON.parse(event.data);
             switch (data.type) {
-                case 'turn':
-                    await handleTurn(data);
+                case 'turn_start':
+                    // Show the text immediately in a single chat bubble
+                    showTurn(data);
+                    break;
+                case 'audio_chunk':
+                    // Enqueue this audio chunk for sequential playback
+                    if (data.text) {
+                        appendTurnText(data.turn, data.text);
+                    }
+                    enqueueAudioChunk(data.chunk, data.turn);
+                    break;
+                case 'audio_end':
+                    // Signal that no more chunks will arrive for this turn.
+                    // If the queue is empty (or just drained), send playback_done.
+                    if (audioQueue.length === 0 && currentAudioEl === null) {
+                        sendPlaybackDone(data.turn);
+                    } else {
+                        pendingPlaybackDoneTurn = data.turn;
+                    }
                     break;
                 case 'done':
-                    hasReceivedDone = true;
+                    simulationEnded = true;
                     handleDone(data);
                     break;
                 case 'error':
@@ -177,66 +202,50 @@ function connectWebSocket(simId, topic) {
     };
 
     ws.onclose = () => {
-        if (!hasReceivedDone) {
+        if (!simulationEnded) {
             updateStatus('Simulation ended');
         }
     };
 
     ws.onerror = () => {
-        // No need to set status here — onmessage or onclose will handle it
+        if (!simulationEnded) {
+            updateStatus('WebSocket error');
+        }
     };
 }
 
-// --- Handle a turn ---
+// --- Display a turn in the conversation ---
 
-async function handleTurn(turnData) {
-    // Determine speaker type
+function showTurn(turnData) {
     const isPersonaA = turnData.speaker === selectedPersonaA?.name;
     const speakerColor = isPersonaA
         ? (selectedPersonaA?.avatar_color || '#e94560')
         : (selectedPersonaB?.avatar_color || '#00d2ff');
     const alignClass = isPersonaA ? 'a' : 'b';
 
-    // Create turn element
     const turnEl = document.createElement('div');
     turnEl.className = `turn turn-${alignClass}`;
     turnEl.innerHTML = `
         <strong style="color: ${speakerColor}">${turnData.speaker}</strong>
         <p>${escapeHtml(turnData.text)}</p>
     `;
+    // Store the turn number on the element for later text appending
+    turnEl.dataset.turn = turnData.turn;
     document.getElementById('turns').appendChild(turnEl);
-
-    // Scroll to bottom
     turnEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
-
-    // Play audio
-    try {
-        await playAudio(turnData.audio)
-        // Audio finished — send playback_done
-        if (currentWebSocket && currentWebSocket.readyState === WebSocket.OPEN) {
-            currentWebSocket.send(JSON.stringify({ type: 'playback_done', turn: turnData.turn }))
-        }
-    } catch (e) {
-        // Log the error more verbosely for debugging
-        updateStatus(`Audio playback error: ${e.message}`)
-        console.error('Audio error details:', {
-            speaker: turnData.speaker,
-            textLength: turnData.text?.length,
-            audioLength: turnData.audio?.length,
-            audioStart: turnData.audio?.slice(0, 100),
-        })
-    }
 }
 
-// --- Audio playback ---
-
-function playAudio(base64Audio) {
-    return new Promise((resolve, reject) => {
-        const audio = new Audio(`data:audio/wav;base64,${base64Audio}`);
-        audio.onended = () => resolve();
-        audio.onerror = () => reject(new Error('Audio playback failed'));
-        audio.play().catch(reject);
-    });
+function appendTurnText(turnNumber, text) {
+    const turnsEl = document.getElementById('turns');
+    const turnEl = turnsEl.querySelector(`[data-turn="${turnNumber}"]`);
+    if (turnEl) {
+        const p = turnEl.querySelector('p');
+        if (p) {
+            p.textContent = text;
+            // Auto-scroll to keep the current turn visible
+            turnEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }
 }
 
 // --- Simulation done ---
@@ -290,6 +299,62 @@ function resetToStart() {
     document.getElementById('avatar-label-b').textContent = '';
 
     updateStatus('Select personas and enter a topic to start');
+}
+
+// --- Audio playback queue ---
+
+function enqueueAudioChunk(b64, turn) {
+    audioQueue.push({ b64, turn });
+    // Start playing if nothing is active
+    playNextFromQueue();
+}
+
+function playNextFromQueue() {
+    // Don't start playing if something is already active
+    if (currentAudioEl !== null) {
+        return;
+    }
+    if (audioQueue.length === 0) {
+        // Queue drained — check if we're waiting for playback_done
+        if (pendingPlaybackDoneTurn !== null) {
+            sendPlaybackDone(pendingPlaybackDoneTurn);
+            pendingPlaybackDoneTurn = null;
+        }
+        return;
+    }
+
+    const item = audioQueue.shift();
+    playSingleChunk(item.b64, item.turn);
+}
+
+function playSingleChunk(b64, turn) {
+    currentAudioEl = new Audio();
+    currentAudioEl.src = b64ToDataUrl(b64);
+    currentAudioEl.onended = () => {
+        currentAudioEl = null;
+        playNextFromQueue();
+    };
+    currentAudioEl.onerror = () => {
+        currentAudioEl = null;
+        updateStatus('Audio playback error');
+        // Skip to next chunk even if this one failed
+        playNextFromQueue();
+    };
+    currentAudioEl.play().catch((e) => {
+        updateStatus(`Audio play failed: ${e.message}`);
+        currentAudioEl = null;
+        playNextFromQueue();
+    });
+}
+
+function b64ToDataUrl(b64) {
+    return 'data:audio/wav;base64,' + b64;
+}
+
+function sendPlaybackDone(turn) {
+    if (currentWebSocket && currentWebSocket.readyState === WebSocket.OPEN) {
+        currentWebSocket.send(JSON.stringify({ type: 'playback_done', turn: turn }));
+    }
 }
 
 // --- Utilities ---

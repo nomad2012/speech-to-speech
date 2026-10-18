@@ -5,6 +5,10 @@ Each turn flows through two stages:
 1. **LLM call** — remote Chat Completions endpoint generates a persona response.
 2. **TTS synthesis** — OmniVoice converts the response text into PCM audio.
 
+The engine supports **incremental TTS**: LLM output is streamed sentence-by-
+sentence to TTS as soon as each sentence completes, so audio synthesis begins
+within ~1–2 seconds rather than waiting for the full LLM response.
+
 The engine yields :class:`Turn` objects that carry the speaker identity,
 text, and synthesized audio (int16 mono PCM at 16 kHz).
 
@@ -18,6 +22,7 @@ import asyncio
 import io
 import json
 import logging
+import re
 import wave
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -25,7 +30,6 @@ from threading import Event
 
 import httpx
 import numpy as np
-from threading import Event
 
 from speech_to_speech.personas import Persona, load_personas
 from speech_to_speech.pipeline.cancel_scope import CancelScope
@@ -42,6 +46,11 @@ logger = logging.getLogger(__name__)
 
 PIPELINE_SAMPLE_RATE = 16000
 _TURN_TIMEOUT_S = 180.0
+
+# Sentence boundary regex: period, question mark, or exclamation mark
+# followed by whitespace, newline, or end-of-string.
+_SENTENCE_BOUNDARY_RE = re.compile(r'([.!?])\s*(?=\S|$)')
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -105,6 +114,11 @@ class DuetEngine:
        prompt + conversation history + incoming text.
     2. Synthesizes the LLM response text into audio using OmniVoice.
 
+    With **incremental TTS** (enabled by default), the LLM output is streamed
+    sentence-by-sentence to TTS as soon as each sentence completes, so audio
+    synthesis begins within ~1–2 seconds rather than waiting for the full LLM
+    response.
+
     Attributes:
         personas:   Loaded persona definitions keyed by name.
         llm_url:    Remote LLM endpoint base URL.
@@ -138,34 +152,26 @@ class DuetEngine:
         self.history_a: list[dict] = []
         self.history_b: list[dict] = []
         self._stop = Event()
+        self._last_reply_text_value: str = ""
 
-    # ── LLM interaction ───────────────────────────────────────────────
+    # ── LLM streaming ─────────────────────────────────────────────────
 
-    async def _call_llm(
+    async def _stream_llm(
         self,
         persona: Persona,
         history: list[dict],
         other_persona: str | None = None,
-    ) -> str:
-        """Call the remote Chat Completions API and collect the streaming reply.
-
-        The conversation is built from:
-
-        1. Persona's system prompt (as a ``system`` message).
-        2. The persona's own chat history (passed in *history*).
-
-        Args:
-            persona:         The :class:`Persona` whose prompt to use.
-            history:         The conversation history list for this persona.
-            other_persona:   Name of the other participant (optional).
-
-        Returns:
-            The assistant's response text.
+    ) -> AsyncIterator[str]:
+        """Yield each LLM text delta as it arrives from the SSE stream.
 
         Raises:
-            RuntimeError: If the LLM call fails or returns empty content.
+            RuntimeError: If the LLM call fails.
         """
-        system_content = f"{persona.prompt}\n\nKeep your response brief — 100 words or less. Do not include reasoning, thinking traces, or internal monologue in your response."
+        system_content = (
+            f"{persona.prompt}\n\n"
+            "Keep your response brief — 100 words or less. "
+            "Do not include reasoning, thinking traces, or internal monologue."
+        )
         if other_persona:
             system_content += f"\n\nYou are having a conversation with {other_persona}."
 
@@ -181,10 +187,8 @@ class DuetEngine:
             "reasoning_effort": "none",
         }
 
-        logger.debug("LLM request: model=%s, messages count=%d, max_tokens=%s",
-                      self.llm_model, len(messages), self.max_reply_tokens)
+        full_response_parts: list[str] = []
 
-        response_text = []
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
@@ -199,7 +203,6 @@ class DuetEngine:
                         )
 
                     async for line in resp.aiter_lines():
-                        # Strip SSE prefix if present
                         data_str = line
                         if data_str.startswith("data: "):
                             data_str = data_str[len("data: "):]
@@ -208,11 +211,9 @@ class DuetEngine:
                         if not data_str or data_str == "[DONE]":
                             continue
 
-                        # Try to parse as JSON
                         try:
                             event = json.loads(data_str)
                         except json.JSONDecodeError:
-                            logger.debug("LLM non-JSON SSE line: %r", line[:100])
                             continue
 
                         if not isinstance(event, dict):
@@ -220,61 +221,42 @@ class DuetEngine:
 
                         choices = event.get("choices")
                         if not isinstance(choices, list) or not choices:
-                            logger.debug("LLM SSE event (no choices): %r", event)
                             continue
 
                         choice = choices[0]
-
-                        # ── Streaming format: delta ──
                         delta = choice.get("delta", {})
+
                         if isinstance(delta, dict):
-                            # Collect all text fields: reasoning models (o1, o3,
-                            # DeepSeek-R1, etc.) output their answer in separate
-                            # `reasoning` or `reasoning_content` fields.  We
-                            # collect every text-like field so the full response
-                            # is captured.
                             content = delta.get("content") or delta.get("text")
                             reasoning = delta.get("reasoning")
                             reasoning_content = delta.get("reasoning_content")
                             if content is not None and isinstance(content, str) and content.strip():
-                                response_text.append(content)
+                                full_response_parts.append(content)
+                                yield content
                             if reasoning is not None and isinstance(reasoning, str) and reasoning.strip():
-                                response_text.append(reasoning)
+                                full_response_parts.append(reasoning)
                             if reasoning_content is not None and isinstance(reasoning_content, str) and reasoning_content.strip():
-                                response_text.append(reasoning_content)
+                                full_response_parts.append(reasoning_content)
                             continue
 
-                        # ── Non-streaming format: message ──
-                        # (Some providers don't stream and return message directly)
                         message = choice.get("message", {})
                         if isinstance(message, dict):
                             content = message.get("content") or message.get("text")
-                            reasoning = message.get("reasoning")
-                            reasoning_content = message.get("reasoning_content")
                             if content is not None and isinstance(content, str):
-                                response_text.append(content)
-                            if reasoning is not None and isinstance(reasoning, str):
-                                response_text.append(reasoning)
-                            if reasoning_content is not None and isinstance(reasoning_content, str):
-                                response_text.append(reasoning_content)
+                                full_response_parts.append(content)
                             continue
 
-                        # ── Fallback: check choice for content/text ──
                         content = choice.get("content") or choice.get("text")
                         if content is not None and isinstance(content, str):
-                            response_text.append(content)
+                            full_response_parts.append(content)
                             continue
-
-                        logger.debug("LLM SSE event (no content extracted): %r", event)
 
         except httpx.HTTPError as exc:
             raise RuntimeError(f"LLM call network error: {exc}") from exc
 
-        reply = "".join(response_text).strip()
-        logger.debug("LLM raw response (%d chars): %r", len(reply), reply[:200])
+        reply = "".join(full_response_parts).strip()
 
-        # If streaming returned no content (e.g. reasoning-only model),
-        # fall back to non-streaming call which has the actual response
+        # Fallback to non-streaming if streaming returned nothing
         if not reply:
             logger.debug("Streaming yielded no content; falling back to non-streaming call")
             payload["stream"] = False
@@ -289,14 +271,12 @@ class DuetEngine:
                         data = resp.json()
                         msg = data.get("choices", [{}])[0].get("message", {})
                         reply = msg.get("content", "") or msg.get("text", "") or ""
-                        # Also grab reasoning fields from non-streaming response
                         reasoning = msg.get("reasoning")
                         reasoning_content = msg.get("reasoning_content")
                         if reasoning:
                             reply = (reply + " " + reasoning).strip()
                         if reasoning_content:
                             reply = (reply + " " + reasoning_content).strip()
-                        logger.info("Non-streaming LLM replied (%d chars): %r", len(reply), reply[:120])
                     else:
                         raise RuntimeError(f"Non-streaming call failed with status {resp.status_code}")
             except httpx.HTTPError as exc:
@@ -305,13 +285,44 @@ class DuetEngine:
         if not reply:
             raise RuntimeError("LLM returned empty response")
 
-        # Store the reply so it can be used as the next turn's user_text.
         self._last_reply_text_value = reply
-
         logger.info("LLM replied (%d chars): %r", len(reply), reply[:120])
-        return reply
 
-    # ── single turn ───────────────────────────────────────────────────
+    async def _stream_sentences(
+        self,
+        persona: Persona,
+        history: list[dict],
+        other_persona: str | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream LLM output, yielding complete sentences as they form.
+
+        Buffers LLM text chunks and yields a sentence whenever a sentence
+        boundary (``.``, ``!?``, followed by whitespace or end-of-text) is
+        detected. The final partial sentence is yielded at the end.
+
+        Yields:
+            Complete sentence strings.
+        """
+        buffer = ""
+        async for chunk in self._stream_llm(persona, history, other_persona):
+            buffer += chunk
+            # Split on sentence boundaries
+            parts = _SENTENCE_BOUNDARY_RE.split(buffer)
+            # parts = [text_before_first, boundary_char, text_after, ...]
+            i = 0
+            while i < len(parts) - 1:
+                sentence_text = parts[i].strip()
+                boundary = parts[i + 1]
+                if sentence_text:
+                    yield sentence_text + boundary
+                i += 2
+            buffer = parts[-1] if parts else ""
+
+        remainder = buffer.strip()
+        if remainder:
+            yield remainder
+
+    # ── single turn (incremental TTS) ─────────────────────────────────
 
     async def _run_turn(
         self,
@@ -319,7 +330,11 @@ class DuetEngine:
         history: list[dict],
         other_persona: str | None = None,
     ) -> tuple[bytes, str]:
-        """Execute one persona turn: switch voice, call LLM, synthesize audio.
+        """Execute one persona turn with incremental TTS streaming.
+
+        LLM output is streamed sentence-by-sentence to TTS as soon as each
+        sentence completes. Audio synthesis begins within ~1-2 seconds rather
+        than waiting for the full LLM response.
 
         Args:
             speaker:       Persona name to use.
@@ -330,7 +345,7 @@ class DuetEngine:
             Tuple of ``(pcm_audio_bytes, reply_text)``.
 
         Raises:
-            RuntimeError: If TTS synthesis fails.
+            RuntimeError: If TTS synthesis fails or LLM returns empty.
         """
         persona = self.personas[speaker]
         language = self.shared_language or persona.language
@@ -338,26 +353,122 @@ class DuetEngine:
         # Switch to the speaker's voice
         self.tts_handler.switch_persona(speaker)
 
-        # Get LLM response
-        reply_text = await self._call_llm(persona, history, other_persona)
-
-        # Synthesize audio
+        # Stream sentences and synthesize TTS incrementally
         audio_chunks: list[bytes] = []
+        full_text_parts: list[str] = []
+        sentence_count = 0
+
         try:
-            for chunk in self.tts_handler.process(
-                TTSInput(text=reply_text, language_code=language)
+            async for sentence in self._stream_sentences(
+                persona, history, other_persona
             ):
-                audio_chunks.append(np.asarray(chunk, dtype=np.int16).tobytes())
-        except Exception as exc:
-            logger.error("TTS synthesis failed for speaker %r, text %r: %s", speaker, reply_text[:50], exc, exc_info=True)
-            raise RuntimeError(f"TTS synthesis failed: {exc}") from exc
+                full_text_parts.append(sentence)
+                logger.debug("TTS sentence %d: %r", sentence_count + 1, sentence[:80])
+
+                # Synthesize TTS for this sentence immediately
+                try:
+                    for chunk in self.tts_handler.process(
+                        TTSInput(text=sentence, language_code=language)
+                    ):
+                        audio_chunks.append(
+                            np.asarray(chunk, dtype=np.int16).tobytes()
+                        )
+                except Exception as exc:
+                    logger.error(
+                        "TTS synthesis failed for sentence %d, "
+                        "speaker %r, text %r: %s",
+                        sentence_count + 1,
+                        speaker,
+                        sentence[:50],
+                        exc,
+                        exc_info=True,
+                    )
+                    raise RuntimeError(
+                        f"TTS synthesis failed for sentence {sentence_count + 1}: {exc}"
+                    ) from exc
+
+                sentence_count += 1
+
+        except RuntimeError:
+            raise
+
+        reply_text = "".join(full_text_parts).strip()
+
+        if not reply_text:
+            raise RuntimeError("LLM returned empty response")
 
         audio = b"".join(audio_chunks)
-        logger.info("TTS produced %d bytes for speaker %r", len(audio), speaker)
+        logger.info(
+            "TTS produced %d bytes from %d sentence(s) for speaker %r",
+            len(audio),
+            sentence_count,
+            speaker,
+        )
         if not audio:
             logger.error("TTS produced empty audio for speaker %r", speaker)
             raise RuntimeError(f"TTS produced no audio for speaker {speaker!r}")
         return audio, reply_text
+
+    async def _run_turn_streaming(
+        self,
+        speaker: str,
+        history: list[dict],
+        other_persona: str | None = None,
+    ) -> AsyncIterator[tuple[str, bytes]]:
+        """Execute one turn, yielding (text, audio_chunk) incrementally.
+
+        Yields the full text and accumulated audio after each sentence
+        completes, allowing the server to stream audio to the client as
+        it's synthesized.
+
+        Yields:
+            Tuples of ``(text_so_far, audio_chunk_bytes)``.
+        """
+        persona = self.personas[speaker]
+        language = self.shared_language or persona.language
+
+        self.tts_handler.switch_persona(speaker)
+
+        audio_chunks: list[bytes] = []
+        full_text_parts: list[str] = []
+        sentence_count = 0
+
+        try:
+            async for sentence in self._stream_sentences(
+                persona, history, other_persona
+            ):
+                full_text_parts.append(sentence)
+                logger.debug("TTS sentence %d: %r", sentence_count + 1, sentence[:80])
+
+                # Synthesize TTS for this sentence immediately
+                sentence_audio = b""
+                try:
+                    for chunk in self.tts_handler.process(
+                        TTSInput(text=sentence, language_code=language)
+                    ):
+                        int16_bytes = np.asarray(chunk, dtype=np.int16).tobytes()
+                        audio_chunks.append(int16_bytes)
+                        sentence_audio += int16_bytes
+                except Exception as exc:
+                    logger.error(
+                        "TTS synthesis failed for sentence %d, "
+                        "speaker %r, text %r: %s",
+                        sentence_count + 1,
+                        speaker,
+                        sentence[:50],
+                        exc,
+                        exc_info=True,
+                    )
+                    raise RuntimeError(
+                        f"TTS synthesis failed for sentence {sentence_count + 1}: {exc}"
+                    ) from exc
+
+                sentence_count += 1
+                # Yield the accumulated text and audio for this sentence
+                yield " ".join(full_text_parts), sentence_audio
+
+        except RuntimeError:
+            raise
 
     # ── main loop ─────────────────────────────────────────────────────
 
@@ -398,37 +509,27 @@ class DuetEngine:
             return
 
         # Two separate histories — one per persona.
-        # Each history accumulates messages from the speaker's perspective:
-        #   their own responses as role: "assistant", the other persona's
-        #   responses as role: "user".
         self.history_a: list[dict] = []
         self.history_b: list[dict] = []
 
         for index in range(turns):
-            # Check stop signal
             if self._stop.is_set():
                 return
 
-            # Determine speaker (A, B, A, B, ...)
             if index % 2 == 0:
                 speaker = persona_a
             else:
                 speaker = persona_b
 
-            # Choose the correct history for this persona and the other persona name.
-            # After their reply, it crosses over to the OTHER persona's history.
             if index % 2 == 0:
-                # Speaker A — read from A's history, cross to B's history
                 history = self.history_a
                 cross_history = self.history_b
                 other_persona = persona_b
             else:
-                # Speaker B — read from B's history, cross to A's history
                 history = self.history_b
                 cross_history = self.history_a
                 other_persona = persona_a
 
-            # Execute the turn
             try:
                 audio, reply_text = await asyncio.wait_for(
                     self._run_turn(speaker, history, other_persona),
@@ -441,12 +542,9 @@ class DuetEngine:
             if not reply_text.strip():
                 return
 
-            # Cross-over: append assistant reply to own history AND user reply
-            # to the other persona's history.
             history.append({"role": "assistant", "content": reply_text})
             cross_history.append({"role": "user", "content": reply_text})
 
-            # Trim histories to configured size.
             if len(self.history_a) > self.chat_size:
                 self.history_a = self.history_a[-self.chat_size:]
             if len(self.history_b) > self.chat_size:
@@ -488,13 +586,11 @@ def build_engine(config: SimConfig) -> DuetEngine:
         ValueError: If ``config.tts_backend`` is not ``"omnivoice"``.
         RuntimeError: If model loading fails.
     """
-    # Validate TTS backend
     if config.tts_backend != "omnivoice":
         raise ValueError(
             f"persona_sim only supports 'omnivoice' TTS backend, got: {config.tts_backend!r}"
         )
 
-    # Load personas
     personas = load_personas(config.personas_dir)
     if not personas:
         raise RuntimeError(
@@ -504,7 +600,6 @@ def build_engine(config: SimConfig) -> DuetEngine:
         )
     logger.info("Loaded %d persona(s)", len(personas))
 
-    # Initialize OmniVoice TTS handler
     cancel_scope = CancelScope()
     should_listen = Event()
 
