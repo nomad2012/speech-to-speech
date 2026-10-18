@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Persona Versus</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Persona Versus</h1>
+        <p>Two personas. One conversation. You start it.</p>
+    </header>
+
+    <main>
+        <!-- Persona Selection -->
+        <section id="selection">
+            <div class="persona-select">
+                <label for="persona-a">Persona A</label>
+                <select id="persona-a"></select>
+            </div>
+            <div class="persona-select">
+                <label for="persona-b">Persona B</label>
+                <select id="persona-b"></select>
+            </div>
+            <div class="persona-select">
+                <label for="turns">Turns</label>
+                <input type="number" id="turns" min="2" max="20" value="6">
+            </div>
+        </section>
+
+        <!-- Topic Input -->
+        <section id="topic">
+            <label for="topic-input">Your prompt</label>
+            <textarea id="topic-input" placeholder="What would you like them to discuss?" rows="3"></textarea>
+            <button id="start-btn" class="start-button" disabled>Start Duet</button>
+        </section>
+
+        <!-- Conversation Display -->
+        <section id="conversation" class="hidden">
+            <div id="turns"></div>
+        </section>
+
+        <!-- Status -->
+        <div id="status-bar">
+            <span id="status-text">Select personas and enter a topic to start</span>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
