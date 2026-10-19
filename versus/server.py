@@ -280,6 +280,7 @@ async def simulation_stream(websocket: WebSocket, simulation_id: str):
 
             if response.get("type") == "stop":
                 engine_instance.stop()
+                sim["status"] = "stopped"
                 await websocket.send_json({"type": "done", "reason": "stopped"})
                 break
 

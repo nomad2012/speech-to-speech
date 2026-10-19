@@ -83,6 +83,13 @@ function toggleStartButton() {
 
 startBtn.addEventListener('click', startSimulation);
 
+const stopBtn = document.getElementById('stop-btn');
+stopBtn.addEventListener('click', () => {
+    if (currentWebSocket && currentWebSocket.readyState === WebSocket.OPEN) {
+        currentWebSocket.send(JSON.stringify({ type: 'stop' }));
+    }
+});
+
 async function startSimulation() {
     const topic = topicInput.value.trim();
     if (!topic || !selectedPersonaA || !selectedPersonaB) {
@@ -92,6 +99,9 @@ async function startSimulation() {
 
     // Set up avatars
     setupAvatars(selectedPersonaA, selectedPersonaB);
+
+    // Set topic title
+    document.getElementById('topic-title').textContent = topic;
 
     // Switch to duet view
     document.getElementById('setup-container').classList.add('hidden');
@@ -291,6 +301,9 @@ function resetToStart() {
 
     // Clear the topic input
     document.getElementById('topic-input').value = '';
+
+    // Clear topic title
+    document.getElementById('topic-title').textContent = '';
 
     // Clear avatars
     document.getElementById('avatar-a').src = '';

@@ -127,10 +127,39 @@ textarea {
 
 #duet-container {
     flex: 1 1 auto;
-    display: flex;
-    flex-direction: row;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+        "title  title  title"
+        "avatarA turns  avatarB"
+        "ctrl   ctrl   ctrl";
     overflow: hidden;
+}
+
+/* Topic title spans full width at top */
+.topic-title {
+    grid-area: title;
+    text-align: center;
+    padding: 0.6rem 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--surface);
+    border-bottom: 1px solid #222;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Stop button spans full width at bottom */
+.controls-bar {
+    grid-area: ctrl;
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem;
+    background: var(--surface);
+    border-top: 1px solid #222;
 }
 
 /* Avatar columns (left and right) — never scroll */
@@ -147,12 +176,14 @@ textarea {
 
 /* Left avatar = Persona A */
 .avatar-a {
+    grid-area: avatarA;
     align-items: flex-start;
     border-right: 1px solid #222;
 }
 
 /* Right avatar = Persona B */
 .avatar-b {
+    grid-area: avatarB;
     align-items: flex-end;
     border-left: 1px solid #222;
 }
@@ -194,6 +225,7 @@ textarea {
 
 /* Turns column (center) — only this scrolls */
 .turns-column {
+    grid-area: turns;
     flex: 1;
     overflow-y: auto;
     padding: 1.5rem 1rem;
@@ -311,7 +343,18 @@ textarea {
     }
 
     #duet-container {
-        flex-direction: column;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto 1fr auto;
+        grid-template-areas:
+            "title"
+            "avatars"
+            "turns"
+            "ctrl";
+    }
+
+    .avatar-a,
+    .avatar-b {
+        grid-area: auto;
     }
 
     .avatar-column {
@@ -323,6 +366,14 @@ textarea {
         border-bottom: 1px solid #222;
         justify-content: center;
         gap: 0.5rem;
+    }
+
+    .avatar-a {
+        border-right: none;
+    }
+
+    .avatar-b {
+        border-left: none;
     }
 
     .avatar-a,
