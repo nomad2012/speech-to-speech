@@ -175,6 +175,9 @@ async def simulation_stream(websocket: WebSocket, simulation_id: str):
         engine = app.engine
         engine_instance: DuetEngine = engine
 
+        # Reset stop state so new simulations can run
+        engine_instance._stop.clear()
+
         # Update simulation status
         sim["status"] = "running"
         logger.info("Simulation %s started with topic: %s", simulation_id[:8], sim["topic"][:100])
