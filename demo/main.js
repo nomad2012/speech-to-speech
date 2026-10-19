@@ -990,7 +990,7 @@ async function loadPersonas() {
   updatePersonaBanner();
 }
 
-/** Populate the voice <select> from the loaded personas + Qwen3 fallback. */
+/** Populate the voice <select> from the loaded Omnivoice personas. */
 function populateVoiceDropdown() {
   const sel = document.getElementById("voice");
   if (!sel) {
@@ -1005,38 +1005,20 @@ function populateVoiceDropdown() {
   const currentVoice = settings.voice;
   const currentPersona = settings.persona;
 
-  if (personas.length > 0) {
-    // Show personas. Group by type for clarity.
-    const omnivoice = personas.filter(p => p.type === "omnivoice");
-    const qwen3 = personas.filter(p => p.type === "qwen3");
+  // Filter to Omnivoice personas only.
+  const omnivoice = personas.filter(p => p.type === "omnivoice");
 
-    if (omnivoice.length > 0) {
-      const og = document.createElement("optgroup");
-      og.label = "Omnivoice (voice-cloned)";
-      for (const p of omnivoice) {
-        const opt = document.createElement("option");
-        opt.value = p.name;
-        opt.textContent = p.description || p.name;
-        if (p.name === currentPersona) opt.selected = true;
-        og.appendChild(opt);
-      }
-      sel.appendChild(og);
-    }
-
-    if (qwen3.length > 0) {
-      const og = document.createElement("optgroup");
-      og.label = "Qwen3-TTS";
-      for (const p of qwen3) {
-        const opt = document.createElement("option");
-        opt.value = p.name;
-        opt.textContent = p.description || p.name;
-        if (p.name === currentPersona) opt.selected = true;
-        og.appendChild(opt);
-      }
-      sel.appendChild(og);
+  if (omnivoice.length > 0) {
+    // Flat list of all Omnivoice voices.
+    for (const p of omnivoice) {
+      const opt = document.createElement("option");
+      opt.value = p.name;
+      opt.textContent = p.description || p.name;
+      if (p.name === currentPersona) opt.selected = true;
+      sel.appendChild(opt);
     }
   } else {
-    // Fallback to hardcoded Qwen3-TTS voices when no personas are available.
+    // Fallback to hardcoded voices when no Omnivoice personas are available.
     const defaultVoices = ["Aiden", "Ryan", "Dylan", "Eric", "Ono_Anna", "Serena", "Sohee", "Uncle_Fu", "Vivian"];
     for (const v of defaultVoices) {
       const opt = document.createElement("option");
@@ -1116,7 +1098,7 @@ function createResumedAudioContext() {
 function readSettingsFromForm() {
   const voiceValue = inputVoice.value || DEFAULT_VOICE;
   // When personas are available, the dropdown value is a persona name.
-  // Otherwise it's a Qwen3-TTS voice name.
+  // Otherwise it's a fallback voice name.
   const hasPersonas = personas.length > 0;
   let persona;
   if (hasPersonas) {
