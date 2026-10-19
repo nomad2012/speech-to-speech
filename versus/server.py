@@ -189,6 +189,11 @@ async def simulation_stream(websocket: WebSocket, simulation_id: str):
         history_a: list[dict] = []
         history_b: list[dict] = []
 
+        # Seed the first turn with the user's topic
+        if topic.strip():
+            history_a.append({"role": "user", "content": topic.strip()})
+            history_b.append({"role": "user", "content": topic.strip()})
+
         for index in range(max_turns):
             if engine_instance._stop.is_set():
                 break
