@@ -2,15 +2,16 @@
 Tiny server for the speech-to-speech demo.
 
 The demo used to ship as a `sdk: static` Space, but the web-search tool needs a
-search key the browser must NOT see. A static Space has no runtime process, so it
-can't hold a secret the front-end uses. This server fixes that: it serves the
-unchanged front-end AND exposes a same-origin `/api/search` proxy that holds the
-Serper key server-side (see docs/adr/0001).
+search endpoint the browser cannot reach directly (CORS, authentication, etc.).
+A static Space has no runtime process, so it can't proxy requests. This server
+fixes that: it serves the unchanged front-end AND exposes a same-origin
+`/api/search` proxy that forwards to a SearXNG instance server-side
+(see docs/adr/0001).
 
 Everything lives in one container; the speech-to-speech backend stays a separate,
 load-balanced service the browser talks to over WebSocket as before. The load
-balancer's address is a secret too (like the Serper key): the browser never sees
-it. `/api/session` proxies the session handshake server-side so only the
+balancer's address is a secret too: the browser never sees it.
+`/api/session` proxies the session handshake server-side so only the
 per-session compute URL the LB hands back (which the browser must dial) is exposed.
 
 On the deployed Space the server also meters conversation time by HF login tier
@@ -25,7 +26,7 @@ browser connects directly to that URL, shown read-only in Settings.
 Endpoints:
   GET  /api/config           -> { search, lb, allowDirect, s2sUrl, rtc, iceServers, auth }
   GET  /api/me               -> login + tier + remaining budget (LB mode only)
-  POST /api/search           -> { results, answer }  Google via Serper.dev
+  POST /api/search           -> { results, answer }  Web search via SearXNG
   POST /api/calls            -> proxies the WebRTC SDP offer to <s2s>/v1/realtime/calls
   POST /api/session          -> proxies <LB>/session: a grant, or a queue ticket
   GET  /api/queue/{id}       -> proxies <LB>/queue/{id}: position, or a grant on claim
@@ -57,7 +58,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("s2s.search")
 
-SERPER_KEY = os.environ.get("SERPER_API_KEY", "").strip()
+SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://fw16:8888").strip()
 # Speech-to-speech load balancer URL. When set, the browser POSTs /api/session
 # (which proxies <lb>/session here, server-side) and connects to the URL the LB
 # returns (the original flow). The LB address itself is never sent to the browser.
@@ -133,7 +134,6 @@ def _webrtc_calls_url(s2s_url: str) -> str:
     return urlunsplit((scheme, parts.netloc, path.rstrip("/") + "/calls", parts.query, ""))
 
 
-SERPER_URL = "https://google.serper.dev/search"
 # Cap results so the tool output stays small enough to feed back to the model.
 MAX_RESULTS = 5
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -193,9 +193,6 @@ async def _sweeper():
 
 class SearchRequest(BaseModel):
     query: str
-    # Optional user-supplied key (fallback when the deploy has no server key).
-    # Used for this request only; never stored.
-    key: str | None = None
 
 
 @app.get("/api/config")
@@ -206,7 +203,7 @@ def config():
     s2s server URL. The LB address itself is intentionally NOT included."""
     has_personas = bool(_load_personas_for_api())
     return {
-        "search": bool(SERPER_KEY),
+        "search": bool(SEARXNG_URL),
         "lb": bool(LOAD_BALANCER_URL),
         "allowDirect": not LOAD_BALANCER_URL,
         # Deploy-pinned direct s2s URL (empty when unset). Not a secret: the
@@ -315,31 +312,30 @@ def persona_avatar(persona_name: str):
 
 @app.post("/api/search")
 async def search(req: SearchRequest):
-    """Proxy a Google search via Serper.dev. The key stays on the server unless
-    the user brought their own (then theirs is used for this request only)."""
+    """Proxy a web search via SearXNG. The SearXNG URL stays on the server."""
     query = (req.query or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="Empty query.")
 
-    key = (req.key or "").strip() or SERPER_KEY
-    if not key:
-        # No server key and the user didn't supply one — search is unavailable.
+    logger.info("search: incoming query=%s", query)
+
+    search_url = SEARXNG_URL
+    if not search_url:
         raise HTTPException(status_code=503, detail="Search is not configured.")
 
-    headers = {"X-API-KEY": key, "Content-Type": "application/json"}
-    payload = {"q": query, "num": MAX_RESULTS}
+    params = {"q": query, "format": "json", "number_results": MAX_RESULTS}
+    full_url = f"{search_url}/search"
+    logger.info("search: calling SearXNG url=%s params=%s", full_url, params)
     try:
         async with httpx.AsyncClient(timeout=12.0) as http:
-            resp = await http.post(SERPER_URL, headers=headers, json=payload)
+            resp = await http.get(full_url, params=params)
     except httpx.RequestError as exc:
-        logger.warning("Serper unreachable: %r", exc)
+        logger.warning("SearXNG unreachable: %r", exc)
         raise HTTPException(status_code=502, detail="Search provider unreachable.")
 
     if resp.status_code != 200:
-        # Serper's error body carries the real reason (e.g. "Not enough
-        # credits") and contains no key, so it's safe to log and relay.
         body = resp.text[:300]
-        logger.warning("Serper error %s: %s", resp.status_code, body)
+        logger.warning("SearXNG error %s: %s", resp.status_code, body)
         msg = None
         try:
             msg = resp.json().get("message")
@@ -352,21 +348,30 @@ async def search(req: SearchRequest):
 
     data = resp.json()
     results = []
-    for item in (data.get("organic") or [])[:MAX_RESULTS]:
+    for item in (data.get("results") or [])[:MAX_RESULTS]:
         results.append(
             {
                 "title": item.get("title", ""),
-                "snippet": item.get("snippet", ""),
-                "url": item.get("link", ""),
+                "snippet": item.get("content", ""),
+                "url": item.get("url", ""),
             }
         )
 
-    # A direct answer when Google has one — saves the model a hop.
-    box = data.get("answerBox") or {}
-    answer = box.get("answer") or box.get("snippet") or None
-    if not answer:
-        kg = data.get("knowledgeGraph") or {}
-        answer = kg.get("description") or None
+    # SearXNG may include answers/solutions in the response.
+    answer = None
+    for key in ("answers", "solutions", "question"):
+        val = data.get(key)
+        if isinstance(val, list) and val:
+            answer = val[0]
+            break
+        if isinstance(val, str) and val:
+            answer = val
+            break
+
+    logger.info(
+        "search: done query=%s results=%d answer=%s",
+        query, len(results), "yes" if answer else "no",
+    )
 
     return JSONResponse({"query": query, "answer": answer, "results": results})
 

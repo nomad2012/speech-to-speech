@@ -1,7 +1,7 @@
 ---
 description: Marvin the Android
 router_hints: general knowlege, robots, science fiction, the meaning of life
-avatar_color: '#ff0000'
+avatar_color: '#ff00ff'
 allow_tool_calls: false
 memory_size: 8192
 ---

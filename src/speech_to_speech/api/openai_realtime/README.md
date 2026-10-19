@@ -283,13 +283,13 @@ uv run python -m speech_to_speech.cli talk --tool-module my_voice_tools --url ws
 uv run python -m speech_to_speech.cli local --tool-module my_voice_tools
 ```
 
-For the included Google search example, get an API key from [serper.dev](https://serper.dev/) and export it:
+For the included web search example, set the SearXNG URL and run the example:
 
 ```bash
-export SERPER_API_KEY="your-key"
+export SEARXNG_URL="http://fw16:8888"
 ```
 
-Then run the example. It uses the same Serper API and `SERPER_API_KEY` variable as the browser demo:
+Then run the example. It uses the same SearXNG URL variable as the browser demo:
 
 ```bash
 uv run python -m speech_to_speech.cli local \

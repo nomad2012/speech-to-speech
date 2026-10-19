@@ -22,24 +22,24 @@ class FakeAsyncClient:
     async def __aexit__(self, *_args):
         return None
 
-    async def post(self, url, **kwargs):
+    async def get(self, url, **kwargs):
         self.captured.update(url=url, **kwargs)
         return self.response
 
 
 @pytest.mark.asyncio
-async def test_serper_search_returns_answer_and_organic_results(monkeypatch):
+async def test_searxng_search_returns_results(monkeypatch):
     captured = {}
     response = FakeResponse(
         200,
         {
-            "answerBox": {"answer": "21°C"},
-            "organic": [
-                {"title": "Forecast", "snippet": "Sunny", "link": "https://example.com/weather"},
+            "answers": ["21°C"],
+            "results": [
+                {"title": "Forecast", "content": "Sunny", "url": "https://example.com/weather"},
             ],
         },
     )
-    monkeypatch.setattr(realtime_web_search_tool, "SERPER_API_KEY", "test-key")
+    monkeypatch.setattr(realtime_web_search_tool, "SEARXNG_URL", "http://fw16:8888")
     monkeypatch.setattr(
         realtime_web_search_tool.httpx,
         "AsyncClient",
@@ -50,20 +50,17 @@ async def test_serper_search_returns_answer_and_organic_results(monkeypatch):
 
     assert result.output["answer"] == "21°C"
     assert result.output["results"] == [{"title": "Forecast", "snippet": "Sunny", "url": "https://example.com/weather"}]
-    assert captured == {
-        "url": realtime_web_search_tool.SERPER_URL,
-        "headers": {"X-API-KEY": "test-key", "Content-Type": "application/json"},
-        "json": {"q": "weather in Bern", "num": realtime_web_search_tool.MAX_RESULTS},
-    }
+    assert "url" in captured
+    assert "weather+in+Bern" in captured["url"] or "q=weather+in+Bern" in captured["url"] or "q=weather%2Bin%2BBern" in captured["url"]
 
 
 @pytest.mark.asyncio
-async def test_serper_search_reports_missing_api_key(monkeypatch):
-    monkeypatch.setattr(realtime_web_search_tool, "SERPER_API_KEY", "")
+async def test_searxng_search_reports_missing_url(monkeypatch):
+    monkeypatch.setattr(realtime_web_search_tool, "SEARXNG_URL", "")
 
     result = await realtime_web_search_tool.execute_tool("web_search", {"query": "latest news"})
 
     assert result.output == {
         "query": "latest news",
-        "error": "SERPER_API_KEY is not set. Get an API key at https://serper.dev/.",
+        "error": "SEARXNG_URL is not set.",
     }

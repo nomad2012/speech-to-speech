@@ -1166,6 +1166,12 @@ class ResponseHandler(RealtimeBaseHandler):
                     )
                 self._service.conversation.record_acknowledged_item(conn_id, item_id)
             elif isinstance(part, AssistantToolCallPart):
+                logger.info(
+                    "Tool call detected: name=%s call_id=%s response_id=%s",
+                    part.tool.name,
+                    part.tool.call_id,
+                    resp_id,
+                )
                 # An early tool call defers closing the message only while TTS
                 # still owes it audio. Text-only output has nothing to wait for,
                 # so it closes here; otherwise it would only close at response
@@ -1248,6 +1254,12 @@ class ResponseHandler(RealtimeBaseHandler):
         event: AssistantToolCallReadyEvent,
     ) -> list[ServerEvent]:
         """Expose a sequenced tool call while preceding TTS is still running."""
+        logger.info(
+            "Early tool call ready: name=%s call_id=%s output_sequence=%d",
+            event.part.tool.name,
+            event.part.tool.call_id,
+            event.output_sequence,
+        )
         st = self._state(conn_id)
         if event.output_sequence < st.next_assistant_output_sequence:
             return []
@@ -1260,6 +1272,12 @@ class ResponseHandler(RealtimeBaseHandler):
         while st.next_assistant_output_sequence in st.pending_early_tool_calls:
             ready = st.pending_early_tool_calls[st.next_assistant_output_sequence]
             assert isinstance(ready, AssistantToolCallReadyEvent)
+            logger.info(
+                "Flushing early tool call: name=%s call_id=%d output_sequence=%d",
+                ready.part.tool.name,
+                ready.part.tool.call_id,
+                ready.output_sequence,
+            )
             emitted = self.on_assistant_output(
                 conn_id,
                 AssistantOutputEvent(
@@ -1281,6 +1299,12 @@ class ResponseHandler(RealtimeBaseHandler):
         event: AssistantResponseDoneEvent,
     ) -> list[ServerEvent]:
         """Record that all ordered text/tool output for one response was emitted."""
+        logger.info(
+            "Response done: response_key=%s status=%s tool_call_ids=%s",
+            event.response_key,
+            event.status,
+            event.input_tool_call_ids,
+        )
         st = self._state(conn_id)
         response_was_missing = st.current_response_id is None
         self._ensure_response(conn_id, event.response_key)

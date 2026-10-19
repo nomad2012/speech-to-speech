@@ -846,7 +846,7 @@ async function runTool(name, argsJson, callId) {
   let args = /** @type {Record<string, unknown>} */ ({});
   try { args = JSON.parse(argsJson || "{}"); } catch { /* keep {} */ }
 
-  if (DEBUG) console.debug(`[tool] run name=${name} callId=${JSON.stringify(callId)} args=${argsJson}`);
+  console.debug(`[tool] run name=%s callId=%s args=%s`, name, JSON.stringify(callId), argsJson);
   if (!callId) console.warn("[tool] empty call_id — the backend didn't tag the call, can't return a function_call_output");
 
   /** @type {{ output: string, image?: string }} */
@@ -854,7 +854,9 @@ async function runTool(name, argsJson, callId) {
   try {
     if (name === "web_search") {
       const query = typeof args.query === "string" ? args.query : "";
+      console.debug(`[tool] web_search: executing query=%s`, query);
       result.output = await execWebSearch(query);
+      console.debug(`[tool] web_search: done, result_length=${result.output.length}`);
     } else if (name === "camera_snapshot") {
       const dataUrl = captureSnapshot();
       if (dataUrl) {
@@ -878,6 +880,7 @@ async function runTool(name, argsJson, callId) {
 /** @param {string} query @returns {Promise<string>} */
 async function execWebSearch(query) {
   if (!query) return "No query provided.";
+  console.debug(`[tool] execWebSearch: fetching api/search for query=%s`, query);
   /** @type {Record<string, string>} */
   const body = { query };
   // Only send a user key when there's no server key (server prefers its own).
@@ -888,12 +891,14 @@ async function execWebSearch(query) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  console.debug(`[tool] execWebSearch: api/search response status=%d`, res.status);
   if (!res.ok) {
     let detail = String(res.status);
     try { const j = await res.json(); if (j.detail) detail = j.detail; } catch {}
     throw new Error(`search error (${detail})`);
   }
   const json = await res.json();
+  console.debug(`[tool] execWebSearch: got ${json.results?.length || 0} result(s), answer=${json.answer ? 'yes' : 'no'}`);
   // Date-stamp the header so the model treats these as fresh realtime facts
   // rather than its (older) training knowledge.
   const today = new Date().toISOString().slice(0, 10);

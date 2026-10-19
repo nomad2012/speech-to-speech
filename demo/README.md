@@ -70,7 +70,7 @@ Validation: `npm run test:agents:adapter` checks parsing and adapter behavior;
    npm ci --prefix demo
    uv pip install -r demo/requirements.txt
    export SPEECH_TO_SPEECH_URL=ws://localhost:8765/v1/realtime
-   export SERPER_API_KEY=...   # optional; web search is disabled without it
+   export SEARXNG_URL=...   # optional; web search is disabled without it
    export STARTUP_GREETING=... # optional; empty disables the automatic greeting
    uv run uvicorn --app-dir demo server:app --reload --port 7860
    ```
@@ -216,10 +216,8 @@ new `RealtimeSession` after connection.
 The assistant can call two tools mid-conversation (toggle them from the **Tools**
 button, top-right):
 
-- **Web search** — Google results via Serper.dev, proxied server-side so the key
-  never reaches the browser. Set `SERPER_API_KEY` as an env var / Space secret.
-  Without it, the tool is disabled unless the user pastes their own key in the
-  Tools panel.
+- **Web search** — Web search via SearXNG, proxied server-side. Set `SEARXNG_URL`
+  as an env var / Space secret. Without it, the tool is disabled.
 - **Camera** — while enabled, a live self-view shows bottom-left; when the model
   calls the tool, the current frame is sent to the vision-language model so it can
   see what you're showing it.

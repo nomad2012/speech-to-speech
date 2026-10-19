@@ -1,4 +1,4 @@
-"""Serper-backed Google search tool for the packaged Realtime audio client."""
+"""SearXNG-backed web search tool for the packaged Realtime audio client."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -13,8 +14,7 @@ from speech_to_speech.api.openai_realtime.audio_client import ToolResult
 
 logger = logging.getLogger(__name__)
 
-SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "").strip()
-SERPER_URL = "https://google.serper.dev/search"
+SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://fw16:8888").strip()
 MAX_RESULTS = 5
 
 TOOLS = [
@@ -23,8 +23,7 @@ TOOLS = [
         "name": "web_search",
         "description": (
             "Search the web for current or factual information you do not already know, such as news, prices, "
-            "facts, or documentation. Returns a direct answer when Google provides one, followed by the top "
-            "results with titles, snippets, and URLs."
+            "facts, or documentation. Returns the top results with titles, snippets, and URLs."
         ),
         "parameters": {
             "type": "object",
@@ -50,24 +49,23 @@ async def execute_tool(name: str, arguments: dict[str, Any]) -> ToolResult:
     query = str(arguments.get("query", "")).strip()
     if not query:
         return ToolResult({"error": "query must be a non-empty string"})
-    if not SERPER_API_KEY:
+    if not SEARXNG_URL:
         return ToolResult(
             {
                 "query": query,
-                "error": "SERPER_API_KEY is not set. Get an API key at https://serper.dev/.",
+                "error": "SEARXNG_URL is not set.",
             }
         )
 
-    logger.info("web_search query=%s max_results=%d", query, MAX_RESULTS)
+    params = urlencode({"q": query, "format": "json", "number_results": MAX_RESULTS})
+    search_url = f"{SEARXNG_URL}/search?{params}"
+
+    logger.info("web_search query=%s max_results=%d url=%s", query, MAX_RESULTS, search_url)
     try:
         async with httpx.AsyncClient(timeout=12.0) as client:
-            response = await client.post(
-                SERPER_URL,
-                headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-                json={"q": query, "num": MAX_RESULTS},
-            )
+            response = await client.get(search_url)
     except httpx.RequestError as exc:
-        logger.warning("Serper unreachable for %r: %s", query, exc)
+        logger.warning("SearXNG unreachable for %r: %s", query, exc)
         return ToolResult(
             {
                 "query": query,
@@ -85,20 +83,25 @@ async def execute_tool(name: str, arguments: dict[str, Any]) -> ToolResult:
         detail = f"Search provider error ({response.status_code})"
         if message:
             detail += f": {message}"
-        logger.warning("Serper returned HTTP %d for %r", response.status_code, query)
+        logger.warning("SearXNG returned HTTP %d for %r", response.status_code, query)
         return ToolResult({"query": query, "error": detail})
 
     try:
         data = response.json()
     except ValueError:
-        logger.warning("Serper returned invalid JSON for %r", query)
+        logger.warning("SearXNG returned invalid JSON for %r", query)
         return ToolResult({"query": query, "error": "Search provider returned an invalid response."})
 
-    answer_box = data.get("answerBox") or {}
-    answer = answer_box.get("answer") or answer_box.get("snippet") or None
-    if not answer:
-        knowledge_graph = data.get("knowledgeGraph") or {}
-        answer = knowledge_graph.get("description") or None
+    # SearXNG does not provide a dedicated answer box; check for answers/solutions anyway.
+    answer = None
+    for key in ("answers", "solutions", "question"):
+        val = data.get(key)
+        if isinstance(val, list) and val:
+            answer = val[0]
+            break
+        if isinstance(val, str) and val:
+            answer = val
+            break
 
     return ToolResult(
         {
@@ -108,10 +111,10 @@ async def execute_tool(name: str, arguments: dict[str, Any]) -> ToolResult:
             "results": [
                 {
                     "title": item.get("title", ""),
-                    "snippet": item.get("snippet", ""),
-                    "url": item.get("link", ""),
+                    "snippet": item.get("content", ""),
+                    "url": item.get("url", ""),
                 }
-                for item in (data.get("organic") or [])[:MAX_RESULTS]
+                for item in (data.get("results") or [])[:MAX_RESULTS]
             ],
         }
     )
