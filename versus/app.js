@@ -85,6 +85,15 @@ startBtn.addEventListener('click', startSimulation);
 
 const stopBtn = document.getElementById('stop-btn');
 stopBtn.addEventListener('click', () => {
+    // Cancel any queued or playing audio
+    audioQueue = [];
+    if (currentAudioEl) {
+        currentAudioEl.pause();
+        currentAudioEl = null;
+    }
+    pendingPlaybackDoneTurn = null;
+
+    // Tell the server to stop
     if (currentWebSocket && currentWebSocket.readyState === WebSocket.OPEN) {
         currentWebSocket.send(JSON.stringify({ type: 'stop' }));
     }
