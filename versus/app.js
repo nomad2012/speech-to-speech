@@ -291,6 +291,16 @@ function handleDone(doneData) {
 }
 
 function resetToStart() {
+    // Close the old WebSocket connection to prevent stale messages
+    if (currentWebSocket && currentWebSocket.readyState <= WebSocket.OPEN) {
+        currentWebSocket.close();
+    }
+    currentWebSocket = null;
+    simulationEnded = false;
+    audioQueue = [];
+    currentAudioEl = null;
+    pendingPlaybackDoneTurn = null;
+
     // Clear the conversation history
     const turnsEl = document.getElementById('turns');
     turnsEl.innerHTML = '';
