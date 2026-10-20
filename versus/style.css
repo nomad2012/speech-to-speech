@@ -27,24 +27,12 @@ html, body {
 /* ── Header ── */
 
 header {
+    position: relative;
     text-align: center;
     padding: 0.8rem 1rem;
     background: var(--surface);
     flex: 0 0 auto;
     height: var(--header-h);
-}
-
-header .header-content {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    max-width: 600px;
-    margin: 0 auto;
-}
-
-header .header-text {
-    text-align: center;
 }
 
 header h1 {
@@ -58,8 +46,11 @@ header p {
     font-size: 0.85rem;
 }
 
-/* Reload button */
+/* Reload button — pinned upper right */
 .reload-btn {
+    position: absolute;
+    top: 0.6rem;
+    right: 1rem;
     background: transparent;
     border: 1px solid #444;
     color: var(--text-muted);
@@ -71,7 +62,6 @@ header p {
     justify-content: center;
     cursor: pointer;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
-    flex-shrink: 0;
 }
 
 .reload-btn:hover {
@@ -385,10 +375,6 @@ textarea {
 @media (max-width: 640px) {
     :root {
         --header-h: 70px;
-    }
-
-    header .header-content {
-        gap: 0.5rem;
     }
 
     header h1 {
