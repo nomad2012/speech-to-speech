@@ -32,9 +32,40 @@ async function loadPersonas() {
     }
 }
 
+// --- Reload personas button ---
+
+const reloadBtn = document.getElementById('reload-personas-btn');
+if (reloadBtn) {
+    reloadBtn.addEventListener('click', async () => {
+        reloadBtn.disabled = true;
+        const origTitle = reloadBtn.title;
+        reloadBtn.title = 'Reloading…';
+        try {
+            const resp = await fetch('/api/personas/reload', { method: 'POST' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const result = await resp.json();
+            updateStatus(`Reloaded ${result.personas} persona(s). Refreshing list…`);
+            // Re-fetch personas list to pick up any changes
+            const res = await fetch('/api/personas');
+            const data = await res.json();
+            populatePersonas(data.personas || []);
+            updateStatus('Select personas and enter a topic to start');
+        } catch (e) {
+            updateStatus('Reload failed: ' + e.message);
+        } finally {
+            reloadBtn.disabled = false;
+            reloadBtn.title = origTitle;
+        }
+    });
+}
+
 function populatePersonas(personas) {
     const selectA = document.getElementById('persona-a');
     const selectB = document.getElementById('persona-b');
+
+    // Clear existing options before adding new ones
+    selectA.innerHTML = '';
+    selectB.innerHTML = '';
 
     personas.forEach(p => {
         const optA = new Option(p.description || p.name, p.name);

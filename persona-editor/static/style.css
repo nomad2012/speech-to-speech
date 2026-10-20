@@ -161,6 +161,23 @@ main {
     color: var(--text-muted);
 }
 
+/* List status messages */
+.list-status {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 0.95rem;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+}
+
+.list-status.error {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #fca5a5;
+}
+
 /* Empty state */
 .empty-state {
     text-align: center;

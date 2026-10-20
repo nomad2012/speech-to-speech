@@ -490,6 +490,19 @@ async function clonePersona(name) {
 
 let deletingName = null;
 
+// Global area for transient status messages on the persona list
+const listStatusEl = document.getElementById('list-status');
+
+function showListStatus(msg, isError) {
+    if (!listStatusEl) return;
+    listStatusEl.textContent = msg;
+    listStatusEl.className = isError ? 'list-status error' : 'list-status';
+    listStatusEl.classList.remove('hidden');
+    setTimeout(() => {
+        listStatusEl.classList.add('hidden');
+    }, 5000);
+}
+
 function confirmDeletePersona(name) {
     deletingName = name;
     deleteMessage.textContent = `Delete persona "${name}"? This cannot be undone.`;
@@ -502,19 +515,25 @@ function closeDeleteModal() {
 }
 
 btnConfirmDelete.addEventListener('click', async () => {
-    if (!deletingName) return;
+    const nameToDelete = deletingName;
+    if (!nameToDelete) return;
     closeDeleteModal();
 
     try {
-        const resp = await fetch(`/api/personas/${encodeURIComponent(deletingName)}`, {
+        const resp = await fetch(`/api/personas/${encodeURIComponent(nameToDelete)}`, {
             method: 'DELETE',
         });
-        if (!resp.ok && resp.status !== 204) {
-            console.error('Delete failed:', resp.status);
-            return;
+        if (resp.status === 204) {
+            await loadPersonas();
+            showListStatus(`Persona "${nameToDelete}" deleted.`, false);
+        } else if (resp.status === 404) {
+            showListStatus(`Persona "${nameToDelete}" not found on server. It may have been deleted already.`, true);
+        } else {
+            const err = await resp.json().catch(() => ({}));
+            showListStatus(`Delete failed: ${err.detail || `HTTP ${resp.status}`}`, true);
         }
-        await loadPersonas();
     } catch (err) {
+        showListStatus('Delete failed. Is the server running?', true);
         console.error('Delete error:', err);
     }
 });

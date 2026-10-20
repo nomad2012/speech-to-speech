@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 import base64
 import io
 import logging
+import os
 import wave
 import uuid
 from typing import Optional
@@ -79,6 +80,20 @@ async def startup_event():
 
 
 # --- Endpoints ---
+
+
+@app.post("/api/personas/reload")
+async def personas_reload():
+    """Reload personas from disk and re-build the engine."""
+    try:
+        config = SimConfig.from_env()
+        engine = build_engine(config)
+        app.engine = engine
+        logger.info("Persona engine reloaded with %d personas", len(engine.personas))
+        return {"personas": len(engine.personas)}
+    except Exception as e:
+        logger.error("Failed to reload persona engine: %s", e)
+        raise HTTPException(status_code=500, detail=f"Reload failed: {e}")
 
 
 @app.get("/api/personas")
@@ -306,7 +321,7 @@ async def simulation_stream(websocket: WebSocket, simulation_id: str):
 
 
 # Serve the web app files
-app.mount("/", StaticFiles(directory="versus", html=True), name="static")
+app.mount("/", StaticFiles(directory=os.path.dirname(os.path.abspath(__file__)), html=True), name="static")
 
 
 if __name__ == "__main__":

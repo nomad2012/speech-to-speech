@@ -566,7 +566,26 @@ from fastapi.responses import FileResponse
 def create_app() -> "fastapi.FastAPI":  # type: ignore[name-defined]
     """Create the FastAPI application."""
     import fastapi
+    from fastapi.middleware.cors import CORSMiddleware
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request
+    from starlette.responses import Response
+
     app = fastapi.FastAPI(title="Persona Editor")
+
+    # Prevent browser caching of HTML and static assets
+    @app.middleware("http")
+    async def no_cache_html(request: Request, call_next):
+        response: Response = await call_next(request)
+        if request.url.path == "/" or request.url.path == "":
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        elif request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
 
     # Mount static files
     static_dir = _SERVER_ROOT / "static"

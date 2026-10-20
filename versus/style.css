@@ -34,6 +34,19 @@ header {
     height: var(--header-h);
 }
 
+header .header-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+header .header-text {
+    text-align: center;
+}
+
 header h1 {
     margin: 0;
     font-size: 1.6rem;
@@ -43,6 +56,38 @@ header p {
     color: var(--text-muted);
     margin: 0.2rem 0 0;
     font-size: 0.85rem;
+}
+
+/* Reload button */
+.reload-btn {
+    background: transparent;
+    border: 1px solid #444;
+    color: var(--text-muted);
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+}
+
+.reload-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    border-color: #666;
+}
+
+.reload-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.reload-btn svg {
+    width: 18px;
+    height: 18px;
 }
 
 /* ── Setup Container (scrollable, shown before simulation) ── */
@@ -340,6 +385,28 @@ textarea {
 @media (max-width: 640px) {
     :root {
         --header-h: 70px;
+    }
+
+    header .header-content {
+        gap: 0.5rem;
+    }
+
+    header h1 {
+        font-size: 1.3rem;
+    }
+
+    header p {
+        font-size: 0.75rem;
+    }
+
+    .reload-btn {
+        width: 32px;
+        height: 32px;
+    }
+
+    .reload-btn svg {
+        width: 16px;
+        height: 16px;
     }
 
     #duet-container {
