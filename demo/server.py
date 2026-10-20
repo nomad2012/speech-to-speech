@@ -310,6 +310,45 @@ def persona_avatar(persona_name: str):
         raise HTTPException(status_code=404, detail="Avatar not found.")
 
 
+@app.post("/api/personas/reload")
+async def personas_reload():
+    """Reload personas from disk and forward the reload to the s2s backend."""
+    # Clear the demo server's persona cache.
+    global _personas_cache
+    old = _personas_cache
+    _personas_cache = None
+    new_list = _load_personas_for_api()
+
+    # Forward the reload to the s2s server (if it's reachable).
+    s2s_url = os.environ.get("SPEECH_TO_SPEECH_URL", "").strip()
+    s2s_ok = None
+    s2s_err = None
+    if s2s_url:
+        try:
+            # Derive the http base URL from the ws/wss URL.
+            s = s2s_url.strip()
+            if not s.startswith(("ws://", "wss://")):
+                s = "http://" + s
+            parts = urlsplit(s)
+            scheme = {"ws": "http", "wss": "https"}.get(parts.scheme, parts.scheme)
+            base = urlunsplit((scheme, parts.netloc, "", "", ""))
+            async with httpx.AsyncClient(timeout=5.0, verify=False) as http:
+                resp = await http.post(f"{base.rstrip('/')}/admin/reload")
+                if resp.status_code == 200:
+                    s2s_ok = resp.json()
+                else:
+                    s2s_err = resp.text[:200]
+        except Exception as exc:
+            s2s_err = str(exc)
+
+    return {
+        "personas": len(new_list) if new_list else 0,
+        "previous_personas": len(old) if old else 0,
+        "s2s_reload": s2s_ok,
+        "s2s_error": s2s_err,
+    }
+
+
 @app.post("/api/search")
 async def search(req: SearchRequest):
     """Proxy a web search via SearXNG. The SearXNG URL stays on the server."""

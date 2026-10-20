@@ -274,3 +274,17 @@ def get_persona(personas: dict[str, Persona], name: str | None) -> Persona | Non
     if not name:
         return None
     return personas.get(name)
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload support
+# ---------------------------------------------------------------------------
+
+def reload_personas(personas_dir: str | Path | None = None) -> dict[str, Persona]:
+    """Reload personas from disk, logging the result.
+
+    Call this after the persona editor saves changes to refresh the persona
+    registry without restarting the server.  Returns the newly loaded dict.
+    """
+    return load_personas(personas_dir)
+

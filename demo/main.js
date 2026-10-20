@@ -211,6 +211,8 @@ const orbWrap = $(".orb-wrap");
 const micBtn = $("#mic-btn");
 /** @type {HTMLButtonElement} */
 const stopBtn = $("#stop-btn");
+/** @type {HTMLButtonElement} */
+const reloadPersonasBtn = $("#reload-personas-btn");
 /** @type {HTMLElement} */
 const queueActions = $("#queue-actions");
 /** @type {HTMLButtonElement} */
@@ -1332,6 +1334,33 @@ micBtn.addEventListener("click", () => {
 
 stopBtn.addEventListener("click", async () => {
   await teardown();
+});
+
+/** Reload personas from disk and refresh the settings list. */
+reloadPersonasBtn.addEventListener("click", async () => {
+  reloadPersonasBtn.disabled = true;
+  const origTitle = reloadPersonasBtn.title;
+  reloadPersonasBtn.title = "Reloading…";
+  try {
+    const resp = await fetch("/api/personas/reload", { method: "POST" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const result = await resp.json();
+    let msg = `Reloaded ${result.personas} persona(s).`;
+    if (result.s2s_reload) {
+      msg += ` s2s: ${result.s2s_reload.reloaded}/${result.s2s_reload.total} units.`;
+    }
+    if (result.s2s_error) {
+      msg += ` s2s error: ${result.s2s_error}`;
+    }
+    setCaption(msg, "muted", 4000);
+    // Re-fetch personas list so settings dropdown updates.
+    await loadPersonas();
+  } catch (err) {
+    setCaption("Reload failed: " + err.message, "muted", 4000);
+  } finally {
+    reloadPersonasBtn.disabled = false;
+    reloadPersonasBtn.title = origTitle;
+  }
 });
 
 // "Leave queue": tear down the pending connect (aborts the poll wait) and drop

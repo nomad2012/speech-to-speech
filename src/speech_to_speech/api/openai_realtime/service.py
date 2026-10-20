@@ -64,6 +64,7 @@ from speech_to_speech.api.openai_realtime.input_state import (
 )
 from speech_to_speech.api.openai_realtime.runtime_config import RuntimeConfig
 from speech_to_speech.api.openai_realtime.visemes import SpeechToSpeechVisemesEvent
+from speech_to_speech.personas import Persona
 from speech_to_speech.LLM.chat import Chat, make_user_audio_message, make_user_message
 from speech_to_speech.pipeline.events import (
     AssistantOutputEvent,
@@ -569,6 +570,40 @@ class RealtimeService:
             )
         else:
             logger.warning("No TTS handler configured; persona change will not affect TTS voice")
+
+    def reload_personas(self) -> dict[str, Persona]:
+        """Reload personas from disk and update this service's registry.
+
+        Also rebuilds TTS voice-clone prompts for any voice-cloned personas.
+        Returns the newly loaded personas dict.
+        """
+        from speech_to_speech.personas import load_personas as _load
+
+        personas = _load()
+        old_count = len(self._personas)
+        self._personas = personas
+
+        # Rebuild TTS persona prompts (only relevant for omnivoice / voice-cloned).
+        if self._tts_handler is not None and personas:
+            try:
+                if hasattr(self._tts_handler, "model"):
+                    prompts = getattr(self._tts_handler, "persona_prompts", {}) or {}
+                    for name, p in personas.items():
+                        if p.is_voice_cloned and p.ref_audio_path is not None:
+                            try:
+                                prompts[name] = self._tts_handler.model.create_voice_clone_prompt(
+                                    ref_audio=str(p.ref_audio_path),
+                                    ref_text=p.ref_text,
+                                )
+                            except Exception:
+                                pass  # skip personas with broken reference data
+                    if prompts:
+                        self._tts_handler.persona_prompts = prompts
+            except Exception:
+                logger.warning("reload_personas: failed to rebuild TTS prompts", exc_info=True)
+
+        logger.info("reload_personas: %d -> %d personas (changed: %d)", old_count, len(personas), len(personas) - old_count)
+        return personas
 
     def handle_audio_append(self, conn_id: str, event: InputAudioBufferAppendEvent) -> list[bytes]:
         return self.audio.handle_audio_append(conn_id, event)

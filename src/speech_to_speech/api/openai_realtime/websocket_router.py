@@ -683,6 +683,23 @@ def create_app(
             "units": [_state(u) for u in pool],
         }
 
+    @app.post("/admin/reload")
+    async def admin_reload_endpoint() -> dict:
+        """Reload personas from disk across all pipeline units.
+
+        Called after the persona editor saves changes.
+        """
+        count = len(pool)
+        ok = 0
+        errors = []
+        for unit in pool:
+            try:
+                unit.service.reload_personas()
+                ok += 1
+            except Exception as exc:
+                errors.append(f"pipeline {unit.index}: {exc}")
+        return {"reloaded": ok, "total": count, "errors": errors or None}
+
     @app.post("/v1/realtime/calls")
     async def webrtc_calls_endpoint(request: Request) -> Response:
         """WebRTC SDP handshake (OpenAI GA Realtime 'calls' endpoint).
