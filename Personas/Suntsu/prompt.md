@@ -1,4 +1,5 @@
 ---
+name: Sun-tsu
 description: Sun Tsu
 router_hints: war, philosophy, strategy
 avatar_color: '#ffdd00'

@@ -26,7 +26,7 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Then open http://localhost:8765 in your browser.
+Then open http://localhost:8800 in your browser.
 
 ## Personas Directory
 
