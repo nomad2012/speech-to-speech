@@ -26,7 +26,13 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Then open http://localhost:8800 in your browser.
+This starts uvicorn on port **8800**. Then open <http://localhost:8800/> in your browser.
+
+To run with auto-reload:
+
+```bash
+uvicorn --app-dir persona-editor server:create_app --reload --port 8800
+```
 
 ## Personas Directory
 
@@ -58,4 +64,4 @@ Personas/
 
 ## Port
 
-Default: `8765`. Change the port in `server.py` if needed.
+Default: `8800`. Change the port in `server.py` or via `uvicorn --port` if needed.

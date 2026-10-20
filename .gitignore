@@ -233,3 +233,6 @@ uv.lock
 
 # JavaScript dependencies
 node_modules/
+
+# TLS certificates (self-signed, for local dev)
+cert/

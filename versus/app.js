@@ -18,6 +18,7 @@ let currentWebSocket = null;
 let audioQueue = [];
 let currentAudioEl = null;
 let pendingPlaybackDoneTurn = null;
+let stopped = false;
 
 // --- Load personas on startup ---
 
@@ -85,6 +86,7 @@ startBtn.addEventListener('click', startSimulation);
 
 const stopBtn = document.getElementById('stop-btn');
 stopBtn.addEventListener('click', () => {
+    stopped = true;
     // Cancel any queued or playing audio
     audioQueue = [];
     if (currentAudioEl) {
@@ -175,6 +177,7 @@ function connectWebSocket(simId, topic) {
     audioQueue = [];
     currentAudioEl = null;
     pendingPlaybackDoneTurn = null;
+    stopped = false;
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${location.host}/api/simulations/${simId}/stream`);
     currentWebSocket = ws;
@@ -309,6 +312,7 @@ function resetToStart() {
     audioQueue = [];
     currentAudioEl = null;
     pendingPlaybackDoneTurn = null;
+    stopped = false;
 
     // Clear the conversation history
     const turnsEl = document.getElementById('turns');
@@ -336,6 +340,7 @@ function resetToStart() {
 // --- Audio playback queue ---
 
 function enqueueAudioChunk(b64, turn) {
+    if (stopped) return; // Discard chunks after stop
     audioQueue.push({ b64, turn });
     // Start playing if nothing is active
     playNextFromQueue();

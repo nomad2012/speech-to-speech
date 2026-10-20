@@ -105,6 +105,48 @@ Validation: `npm run test:agents:adapter` checks parsing and adapter behavior;
 > Browsers require **HTTPS or `localhost`** for `getUserMedia()` (mic + camera).
 > `127.0.0.1` and `localhost` both work; plain `http://192.168.x.y` does NOT.
 
+### Accessing from a remote machine (HTTPS)
+
+To let a browser on another machine on your network use the microphone, the
+demo must be served over **HTTPS** — `getUserMedia` is blocked on plain HTTP
+for non-localhost origins.
+
+**Option A — Self-signed certificate (quick)**
+
+```bash
+# Generate cert+key (requires `pip install cryptography`)
+python scripts/generate_cert.py
+
+# Start uvicorn with TLS
+uvicorn --app-dir demo server:app \
+    --ssl-certfile cert/cert.pem \
+    --ssl-keyfile cert/key.pem \
+    --host 0.0.0.0 \
+    --port 443
+```
+
+Browse to `https://<your-server-ip>/`. The browser will show a security
+warning for the self-signed cert — accept it to proceed.
+
+> On macOS / Windows you can use **[mkcert](https://github.com/FiloSottile/mkcert)**
+> to generate a locally-trusted cert. After installing, run
+> `mkcert -install` then `mkcert localhost 192.168.x.y` (replace with your LAN
+> IP) and point uvicorn at the resulting files.
+
+**Option B — Reverse proxy with Let's Encrypt (production)**
+
+For a real domain name with a trusted certificate, place a reverse proxy
+(Nginx, Caddy, Traefik) in front of uvicorn and obtain a certificate via
+Let's Encrypt or another CA. The demo itself does not need to change; the
+proxy terminates TLS and forwards plain HTTP to uvicorn on localhost.
+
+**Remote WebSocket note:** the speech-to-speech backend must also be reachable
+over WebSocket from the browser. If the backend runs on a different host, set
+`SPEECH_TO_SPEECH_URL` to its fully-qualified address (e.g.
+`wss://backend.example.com/v1/realtime`).
+
+> **Docker + host backend: WebSocket and WebRTC need different hostnames.**
+
 Smoke-test the backend from the shell:
 
 ```bash

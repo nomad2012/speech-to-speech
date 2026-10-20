@@ -1066,6 +1066,14 @@ function buildDirectWsUrl(raw) {
       const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(s);
       s = (isLocal ? "ws://" : "wss://") + s;
     }
+  } else {
+    // Page is served over HTTPS but URL uses plain ws:// — upgrade to wss://
+    // so the browser allows the connection (the backend may not need TLS; the
+    // demo server can proxy the WebSocket if needed, but most users just need
+    // the protocol to match the page scheme).
+    if (location.protocol === "https:" && /^ws:\/\//i.test(s)) {
+      s = s.replace(/^ws:/i, "wss:");
+    }
   }
   try {
     const u = new URL(s);
