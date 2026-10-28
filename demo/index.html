@@ -11,6 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>" />
   </head>
   <!--
     `booting` disables transitions/animations until the first paint commits.
@@ -374,11 +375,13 @@
               <span class="switch-track" aria-hidden="true"></span>
             </label>
           </div>
-          <label class="field tools-key">
-            <span>Search API key</span>
-            <input id="search-key" type="password" autocomplete="off" spellcheck="false" />
-            <small id="tool-web-hint"></small>
-          </label>
+          <form class="tools-key-form" style="display:contents">
+            <label class="field tools-key">
+              <span>Search API key</span>
+              <input id="search-key" type="password" autocomplete="off" spellcheck="false" />
+              <small id="tool-web-hint"></small>
+            </label>
+          </form>
 
           <div class="tool-row tool-row-sep" id="tool-cam-row">
             <div class="tool-info">

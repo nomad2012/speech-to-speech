@@ -1069,12 +1069,19 @@ function buildDirectWsUrl(raw) {
       s = (isLocal ? "ws://" : "wss://") + s;
     }
   } else {
-    // Page is served over HTTPS but URL uses plain ws:// — upgrade to wss://
-    // so the browser allows the connection (the backend may not need TLS; the
-    // demo server can proxy the WebSocket if needed, but most users just need
-    // the protocol to match the page scheme).
+    // Page is served over HTTPS but URL uses plain ws:// — normally we'd
+    // upgrade to wss:// so the browser allows the connection (mixed-content
+    // policy blocks ws:// from https: pages).  However, for localhost
+    // addresses we leave ws:// alone: local dev servers rarely have TLS
+    // configured, and upgrading to wss:// would fail.
+    // Users who need wss:// for a remote server should type the full
+    // `wss://host:port/v1/realtime` URL explicitly.
     if (location.protocol === "https:" && /^ws:\/\//i.test(s)) {
-      s = s.replace(/^ws:/i, "wss:");
+      const host = s.replace(/^ws:\/\//i, "");
+      const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(host);
+      if (!isLocal) {
+        s = s.replace(/^ws:/i, "wss:");
+      }
     }
   }
   try {
