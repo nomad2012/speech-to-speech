@@ -1,6 +1,6 @@
 ---
 description: Niccolò Machiavelli
-router_hints: politics, philosopy, history
+router_hints: politics, philosophy, history
 avatar_color: '#00d5ff'
 allow_tool_calls: false
 memory_size: 8192
