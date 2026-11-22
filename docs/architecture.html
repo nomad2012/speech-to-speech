@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Speech-to-Speech Architecture</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2e3345;
+    --text: #e2e4eb;
+    --text-dim: #8b8fa3;
+    --accent-blue: #5b8def;
+    --accent-purple: #a78bfa;
+    --accent-green: #34d399;
+    --accent-orange: #fb923c;
+    --accent-pink: #f472b6;
+    --accent-cyan: #22d3ee;
+    --accent-yellow: #fbbf24;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  .slide {
+    display: none;
+    height: 100vh;
+    width: 100vw;
+    padding: 3rem 4rem 7rem;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    overflow-y: auto;
+  }
+  .slide.active { display: flex; }
+
+  .slide::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, rgba(91,141,239,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .slide-title {
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.25rem;
+    text-align: center;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .slide-subtitle {
+    font-size: 1.1rem;
+    color: var(--text-dim);
+    margin-bottom: 2.5rem;
+    text-align: center;
+  }
+
+  /* ── Overview slide ── */
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    max-width: 1100px;
+    width: 100%;
+  }
+
+  .overview-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+    transition: transform 0.2s, border-color 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .overview-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .overview-card.demo::after { background: var(--accent-blue); }
+  .overview-card.editor::after { background: var(--accent-green); }
+  .overview-card.versus::after { background: var(--accent-orange); }
+
+  .overview-card:hover { transform: translateY(-4px); border-color: var(--accent-blue); }
+
+  .card-icon {
+    width: 56px; height: 56px;
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 1rem;
+    font-size: 1.5rem;
+  }
+
+  .card-icon.blue { background: rgba(91,141,239,0.15); color: var(--accent-blue); }
+  .card-icon.green { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+  .card-icon.orange { background: rgba(251,146,60,0.15); color: var(--accent-orange); }
+
+  .overview-card h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+  .overview-card p { font-size: 0.9rem; color: var(--text-dim); line-height: 1.6; }
+  .overview-card .tag {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 99px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .tag.blue { background: rgba(91,141,239,0.15); color: var(--accent-blue); }
+  .tag.green { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+  .tag.orange { background: rgba(251,146,60,0.15); color: var(--accent-orange); }
+
+  /* ── Pipeline flow slide ── */
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    max-width: 1100px;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .flow-node {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.2rem 1.6rem;
+    text-align: center;
+    min-width: 140px;
+    position: relative;
+  }
+
+  .flow-node .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-bottom: 0.3rem;
+  }
+
+  .flow-node .name { font-size: 1.1rem; font-weight: 700; }
+  .flow-node .desc { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.3rem; }
+
+  .flow-node.audio-in { border-color: var(--accent-cyan); }
+  .flow-node.audio-in .name { color: var(--accent-cyan); }
+  .flow-node.vad { border-color: var(--accent-yellow); }
+  .flow-node.vad .name { color: var(--accent-yellow); }
+  .flow-node.stt { border-color: var(--accent-green); }
+  .flow-node.stt .name { color: var(--accent-green); }
+  .flow-node.llm { border-color: var(--accent-purple); }
+  .flow-node.llm .name { color: var(--accent-purple); }
+  .flow-node.tts { border-color: var(--accent-orange); }
+  .flow-node.tts .name { color: var(--accent-orange); }
+  .flow-node.audio-out { border-color: var(--accent-pink); }
+  .flow-node.audio-out .name { color: var(--accent-pink); }
+
+  .flow-arrow {
+    font-size: 1.4rem;
+    color: var(--text-dim);
+    padding: 0 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .side-channels {
+    margin-top: 2rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .side-channel {
+    background: var(--surface2);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 0.6rem 1rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  /* ── Data layer slide ── */
+  .data-layer {
+    display: flex;
+    gap: 3rem;
+    max-width: 1000px;
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .data-tree {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem 2rem;
+    flex: 1;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.85rem;
+    line-height: 2;
+  }
+
+  .data-tree .dir { color: var(--accent-blue); }
+  .data-tree .file { color: var(--accent-green); }
+  .data-tree .comment { color: var(--text-dim); }
+
+  .data-fields { flex: 1; }
+  .data-fields h3 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--accent-purple); }
+
+  .field-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+  }
+  .field-row .fname { color: var(--accent-cyan); font-family: monospace; }
+  .field-row .ftype { color: var(--text-dim); font-size: 0.8rem; }
+
+  /* ── Versus engine slide ── */
+  .engine-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.2rem;
+    max-width: 800px;
+    width: 100%;
+  }
+
+  .persona-row { display: flex; gap: 2rem; justify-content: center; }
+
+  .persona-box {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 1.2rem 2rem;
+    text-align: center;
+    min-width: 180px;
+  }
+  .persona-box.a { border-color: var(--accent-blue); }
+  .persona-box.b { border-color: var(--accent-orange); }
+  .persona-box .pname { font-size: 1.2rem; font-weight: 700; }
+  .persona-box.a .pname { color: var(--accent-blue); }
+  .persona-box.b .pname { color: var(--accent-orange); }
+  .persona-box .pdesc { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.2rem; }
+
+  .engine-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem 2.5rem;
+    text-align: center;
+    width: 100%;
+    max-width: 500px;
+  }
+  .engine-box .ename { font-size: 1.1rem; font-weight: 700; color: var(--accent-purple); }
+  .engine-box .edesc { font-size: 0.82rem; color: var(--text-dim); margin-top: 0.3rem; }
+
+  .engine-stages {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+  .stage {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  .down-arrow { font-size: 1.5rem; color: var(--text-dim); }
+
+  .output-badge {
+    background: var(--surface);
+    border: 1px solid var(--accent-pink);
+    border-radius: 10px;
+    padding: 0.7rem 1.5rem;
+    font-size: 0.88rem;
+    color: var(--accent-pink);
+    font-weight: 600;
+  }
+
+  /* ── Deployment slide ── */
+  .deploy-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    max-width: 1100px;
+    width: 100%;
+  }
+
+  .deploy-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+  }
+  .deploy-card h3 {
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .deploy-card h3 .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .deploy-card ul {
+    list-style: none;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    line-height: 2;
+  }
+  .deploy-card ul li::before {
+    content: '→';
+    margin-right: 0.5rem;
+    color: var(--text-dim);
+  }
+  .deploy-card .port {
+    display: inline-block;
+    background: var(--surface2);
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    font-family: monospace;
+    font-size: 0.78rem;
+    color: var(--accent-cyan);
+  }
+
+  /* ── Transport slide ── */
+  .transport-compare {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    max-width: 1000px;
+    width: 100%;
+  }
+
+  .transport-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    text-align: center;
+  }
+  .transport-card h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+  .transport-card .tmode {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.75rem;
+  }
+  .transport-card p {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .tmode.ws { background: rgba(91,141,239,0.15); color: var(--accent-blue); }
+  .tmode.webrtc { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+  .tmode.custom { background: rgba(251,146,60,0.15); color: var(--accent-orange); }
+
+  /* ── Navigation footer (llm-presentations style) ── */
+  .footer-hint {
+    position: fixed;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75em;
+    color: #64748b;
+    z-index: 10;
+  }
+  .counter {
+    position: fixed;
+    bottom: 12px;
+    right: 18px;
+    font-size: 0.8em;
+    color: #64748b;
+    z-index: 10;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .slide { padding: 2rem 1.5rem 7rem; }
+    .slide-title { font-size: 1.8rem; }
+    .overview-grid, .deploy-grid, .transport-compare { grid-template-columns: 1fr; }
+    .data-layer { flex-direction: column; }
+    .pipeline-flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+    .persona-row { flex-direction: column; align-items: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- S1 ── Overview -->
+<section class="slide active">
+  <h1 class="slide-title">Speech-to-Speech Pipeline</h1>
+  <p class="slide-subtitle">Real-time AI voice interaction architecture</p>
+  <div class="overview-grid">
+    <div class="overview-card demo">
+      <div class="card-icon blue">🎙️</div>
+      <h3>Demo App</h3>
+      <p>One-to-one voice conversation with a persona. Supports web search, camera snapshots, and VAD-driven turn-taking.</p>
+      <span class="tag blue">WebSocket / WebRTC</span>
+    </div>
+    <div class="overview-card editor">
+      <div class="card-icon green">✏️</div>
+      <h3>Persona Editor</h3>
+      <p>CRUD interface for creating, editing, and managing personas — system prompts, voice cloning audio, avatars, and metadata.</p>
+      <span class="tag green">File-based CRUD</span>
+    </div>
+    <div class="overview-card versus">
+      <div class="card-icon orange">⚔️</div>
+      <h3>Versus App</h3>
+      <p>Two personas converse autonomously. Turn-by-turn duet with incremental TTS streaming over a custom WebSocket protocol.</p>
+      <span class="tag orange">Turn-stream WS</span>
+    </div>
+  </div>
+</section>
+
+<!-- S2 ── Pipeline -->
+<section class="slide">
+  <h1 class="slide-title">Core Pipeline</h1>
+  <p class="slide-subtitle">Audio in → VAD → STT → LLM → TTS → Audio out</p>
+  <div class="pipeline-flow">
+    <div class="flow-node audio-in">
+      <div class="label">Input</div>
+      <div class="name">Audio In</div>
+      <div class="desc">PCM 24kHz</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node vad">
+      <div class="label">Detection</div>
+      <div class="name">VAD</div>
+      <div class="desc">Server VAD</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node stt">
+      <div class="label">Transcribe</div>
+      <div class="name">STT</div>
+      <div class="desc">Parakeet / Whisper</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node llm">
+      <div class="label">Reason</div>
+      <div class="name">LLM</div>
+      <div class="desc">Gemma / Qwen / API</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node tts">
+      <div class="label">Synthesize</div>
+      <div class="name">TTS</div>
+      <div class="desc">Qwen3 / OmniVoice</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node audio-out">
+      <div class="label">Output</div>
+      <div class="name">Audio Out</div>
+      <div class="desc">PCM 24kHz</div>
+    </div>
+  </div>
+  <div class="side-channels">
+    <span class="side-channel">🔊 Diarization (Nemotron-3)</span>
+    <span class="side-channel">📝 Live Transcription</span>
+    <span class="side-channel">⚡ Speculative Turns</span>
+    <span class="side-channel">⏱️ Turn Latency Store</span>
+    <span class="side-channel">👄 Visemes (Wav2Vec2)</span>
+  </div>
+</section>
+
+<!-- S3 ── Data Layer -->
+<section class="slide">
+  <h1 class="slide-title">Persona Data Layer</h1>
+  <p class="slide-subtitle">File-based registry shared across all apps</p>
+  <div class="data-layer">
+    <div class="data-tree">
+      <span class="dir">Personas/</span><br>
+      &nbsp;&nbsp;<span class="dir">Einstein/</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">prompt.md</span> <span class="comment">← system prompt + frontmatter</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">language.txt</span> <span class="comment">← "en"</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">ref.wav</span> <span class="comment">← voice clone audio</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">ref.txt</span> <span class="comment">← voice clone transcript</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">image.jpg</span> <span class="comment">← avatar</span><br>
+      &nbsp;&nbsp;<span class="dir">Feynman/</span><br>
+      &nbsp;&nbsp;<span class="dir">…</span>
+    </div>
+    <div class="data-fields">
+      <h3>Persona Fields</h3>
+      <div class="field-row"><span class="fname">name</span><span class="ftype">str — dir name</span></div>
+      <div class="field-row"><span class="fname">prompt</span><span class="ftype">str — system prompt</span></div>
+      <div class="field-row"><span class="fname">description</span><span class="ftype">str — frontmatter</span></div>
+      <div class="field-row"><span class="fname">router_hints</span><span class="ftype">str — routing hints</span></div>
+      <div class="field-row"><span class="fname">avatar_color</span><span class="ftype">str — hex color</span></div>
+      <div class="field-row"><span class="fname">language</span><span class="ftype">str — ISO 639-1</span></div>
+      <div class="field-row"><span class="fname">ref_audio</span><span class="ftype">Path — voice clone</span></div>
+      <div class="field-row"><span class="fname">memory_size</span><span class="ftype">int — context tokens</span></div>
+      <div class="field-row"><span class="fname">allow_tool_calls</span><span class="ftype">bool</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- S4 ── Versus Engine -->
+<section class="slide">
+  <h1 class="slide-title">Versus Duet Engine</h1>
+  <p class="slide-subtitle">Autonomous persona-to-persona conversation</p>
+  <div class="engine-diagram">
+    <div class="persona-row">
+      <div class="persona-box a">
+        <div class="pname">Persona A</div>
+        <div class="pdesc">Independent history</div>
+      </div>
+      <div class="persona-box b">
+        <div class="pname">Persona B</div>
+        <div class="pdesc">Independent history</div>
+      </div>
+    </div>
+    <span class="down-arrow">↕</span>
+    <div class="engine-box">
+      <div class="ename">DuetEngine</div>
+      <div class="edesc">Alternating turns: A → B → A → B …</div>
+      <div class="engine-stages">
+        <span class="stage">LLM Stream</span>
+        <span class="stage">→ Sentence Split</span>
+        <span class="stage">→ OmniVoice TTS</span>
+      </div>
+    </div>
+    <span class="down-arrow">↓</span>
+    <div class="output-badge">PCM Audio (16kHz) → base64 WAV → WebSocket</div>
+    <p style="font-size:0.82rem; color:var(--text-dim); margin-top:1rem; text-align:center; max-width:500px; line-height:1.6;">
+      LLM output is streamed sentence-by-sentence to TTS as soon as each sentence completes — audio synthesis begins within ~1–2 seconds.
+    </p>
+  </div>
+</section>
+
+<!-- S5 ── Deployment -->
+<section class="slide">
+  <h1 class="slide-title">Deployment Topology</h1>
+  <p class="slide-subtitle">Docker Compose + Hugging Face Space</p>
+  <div class="deploy-grid">
+    <div class="deploy-card">
+      <h3><span class="dot" style="background:var(--accent-purple)"></span> Local / Docker</h3>
+      <ul>
+        <li>llama.cpp server <span class="port">:8080</span></li>
+        <li>s2s pipeline server <span class="port">:8765</span></li>
+        <li>Both on NVIDIA GPU</li>
+        <li>Gemma-4 4B instruct</li>
+      </ul>
+    </div>
+    <div class="deploy-card">
+      <h3><span class="dot" style="background:var(--accent-blue)"></span> HF Space (Demo)</h3>
+      <ul>
+        <li>FastAPI + static frontend</li>
+        <li>Load balancer proxy</li>
+        <li>Session + queue management</li>
+        <li>Daily budget metering</li>
+        <li>SearXNG search proxy</li>
+      </ul>
+    </div>
+    <div class="deploy-card">
+      <h3><span class="dot" style="background:var(--accent-orange)"></span> Versus (Standalone)</h3>
+      <ul>
+        <li>FastAPI server <span class="port">:7861</span></li>
+        <li>OmniVoice TTS (local GPU)</li>
+        <li>Remote LLM API</li>
+        <li>In-memory simulation state</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- S6 ── Transport -->
+<section class="slide">
+  <h1 class="slide-title">Transport Modes</h1>
+  <p class="slide-subtitle">How each app communicates with the backend</p>
+  <div class="transport-compare">
+    <div class="transport-card">
+      <span class="tmode ws">WebSocket</span>
+      <h3>Demo — LB Mode</h3>
+      <p>OpenAI Realtime API protocol over WebSocket. Browser talks to demo server → load balancer → pooled pipeline. Session grants, queue tickets, heartbeat metering.</p>
+    </div>
+    <div class="transport-card">
+      <span class="tmode webrtc">WebRTC</span>
+      <h3>Demo — Direct Mode</h3>
+      <p>SDP handshake via <code>/api/calls</code> proxy. Negotiated audio and data channels flow directly between browser and pipeline server. Lower latency.</p>
+    </div>
+    <div class="transport-card">
+      <span class="tmode custom">Custom WS</span>
+      <h3>Versus — Turn Stream</h3>
+      <p>Custom binary JSON protocol: <code>turn_start → audio_chunk → audio_end → playback_done</code>. Server-driven, sequential turn orchestration.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Navigation footer (llm-presentations style) -->
+<div class="footer-hint">&larr; &rarr; / space to navigate &middot; Home = start &middot; End = last &middot; click: right half = next, left half = back</div>
+<div class="counter"><span id="cur">1</span> / <span id="total">6</span></div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  document.getElementById('total').textContent = slides.length;
+  let i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    document.getElementById('cur').textContent = i + 1;
+    history.replaceState(null, '', '#' + (i + 1));
+  }
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { show(i + 1); e.preventDefault(); }
+    else if (['ArrowLeft', 'PageUp'].includes(e.key)) { show(i - 1); e.preventDefault(); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+  });
+  document.addEventListener('click', e => {
+    if (e.target.closest('a')) return;
+    show(i + (e.clientX > innerWidth / 2 ? 1 : -1));
+  });
+  const start = parseInt((location.hash || '').replace('#', ''), 10) || 1;
+  show(start - 1);
+</script>
+</body>
+</html>
