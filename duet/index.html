@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Persona Duet — F5</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: var(--app-font, system-ui); color: var(--foreground);
+         margin: 0; padding: 16px; background: transparent; }
+  h1 { font-size: 1.15rem; margin: 0 0 4px; }
+  .sub { color: var(--muted-foreground); font-size: .85rem; margin-bottom: 14px; }
+  form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+  select, input[type=text] { padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border);
+         background: var(--card); color: var(--foreground); font: inherit; }
+  input[type=text] { flex: 1 1 220px; }
+  input[type=number] { width: 64px; padding: 7px; border-radius: 6px; border: 1px solid var(--border);
+         background: var(--card); color: var(--foreground); }
+  button { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border);
+         background: var(--accent); color: var(--accent-foreground, #fff); font: inherit; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--foreground); }
+  #status { font-size: .8rem; color: var(--muted-foreground); margin-left: auto; }
+  #stage { display: flex; flex-direction: column; gap: 10px; }
+  .turn { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+          background: var(--card); }
+  .turn.speaking { outline: 2px solid var(--accent); }
+  .who { font-size: .75rem; letter-spacing: .04em; text-transform: uppercase;
+         color: var(--muted-foreground); margin-bottom: 4px; }
+  .txt { line-height: 1.45; }
+  .empty { color: var(--muted-foreground); font-size: .9rem; }
+</style>
+</head>
+<body>
+<h1>Persona Duet</h1>
+<div class="sub">Live on the 5070 via F5-TTS · audio plays automatically, turn by turn.</div>
+<form id="f">
+  <select id="a"></select>
+  <span class="sub">vs</span>
+  <select id="b"></select>
+  <input type="text" id="topic" placeholder="topic — e.g. the art of diplomacy">
+  <input type="number" id="turns" value="6" min="2" max="20">
+  <button type="submit">Begin</button>
+  <button type="button" id="stop" class="ghost">Stop</button>
+  <span id="status">connecting…</span>
+</form>
+<div id="stage"><div class="empty">No duel yet.</div></div>
+
+<script>
+const stage = document.getElementById('stage');
+const status = document.getElementById('status');
+let audioQueue = Promise.resolve();
+
+function setSel(personas) {
+  for (const [id, def] of [['a','Churchill'],['b','Genghis']]) {
+    const el = document.getElementById(id);
+    el.innerHTML = personas.map(p => `<option ${p===def?'selected':''}>${p}</option>`).join('');
+  }
+}
+
+function bubble(speaker, text) {
+  const div = document.createElement('div');
+  div.className = 'turn';
+  div.innerHTML = `<div class="who">${speaker}</div><div class="txt"></div>`;
+  div.querySelector('.txt').textContent = text;
+  stage.appendChild(div);
+  return div;
+}
+
+function playWav(b64, div) {
+  const url = 'data:audio/wav;base64,' + b64;
+  audioQueue = audioQueue.then(() => new Promise(res => {
+    const a = new Audio(url);
+    div.classList.add('speaking');
+    a.onended = () => { div.classList.remove('speaking'); res(); };
+    a.onerror = res;
+    a.play().catch(res);
+  }));
+}
+
+function handle(ev) {
+  if (ev.type === 'hello') {
+    setSel(ev.personas || []);
+    status.textContent = ev.running ? 'duet in progress' : 'ready';
+    if (ev.resume) {
+      stage.innerHTML = '';
+      ev.resume.transcript.forEach(t => bubble(t.speaker, t.text));
+    }
+  } else if (ev.type === 'start') {
+    stage.innerHTML = '';
+    status.textContent = `duet: ${ev.a} vs ${ev.b} — “${ev.topic}”`;
+  } else if (ev.type === 'turn') {
+    window._last = bubble(ev.speaker, ev.text);
+  } else if (ev.type === 'audio') {
+    if (window._last) playWav(ev.wav_b64, window._last);
+  } else if (ev.type === 'error') {
+    status.textContent = 'error: ' + ev.message;
+  } else if (ev.type === 'done') {
+    status.textContent = 'finished';
+  }
+}
+
+function connect() {
+  const es = new EventSource('/api/stream');
+  es.onmessage = m => handle(JSON.parse(m.data));
+  es.onerror = () => { status.textContent = 'reconnecting…'; es.close(); setTimeout(connect, 2000); };
+}
+
+document.getElementById('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = { a: document.getElementById('a').value,
+                 b: document.getElementById('b').value,
+                 topic: document.getElementById('topic').value || 'a matter of consequence',
+                 turns: parseInt(document.getElementById('turns').value, 10) };
+  const r = await fetch('/api/duet', { method: 'POST',
+    headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
+  if (!r.ok) status.textContent = (await r.json()).detail || 'cannot start';
+});
+document.getElementById('stop').addEventListener('click', () => fetch('/api/stop', {method:'POST'}));
+connect();
+</script>
+</body>
+</html>
