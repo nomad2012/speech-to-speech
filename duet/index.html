@@ -69,7 +69,9 @@
     font: inherit; font-weight: 600; cursor: pointer;
   }
   button:hover { filter: brightness(1.08); }
-  button.ghost { background: transparent; color: var(--muted); border-color: var(--border); font-weight: 400; }
+  button.ghost { background: transparent; color: var(--danger); border-color: var(--danger); font-weight: 500; }
+  button.ghost:hover { background: var(--danger); color: var(--accent-ink); }
+  button.ghost:active { transform: translateY(1px); }
   #status { font-size: .8rem; color: var(--muted); margin-left: auto; display: flex; align-items: center; gap: 6px; }
   #status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   #status.live .dot { background: #5fae6e; }
@@ -120,6 +122,8 @@ const statusBox = document.getElementById('status');
 const statusText = document.getElementById('status-text');
 let audioQueue = Promise.resolve();
 let speakerOf = {};
+let currentAudio = null;
+let stopped = false;
 
 function setStatus(text, cls) {
   statusText.textContent = text;
@@ -152,12 +156,20 @@ function bubble(speaker, text, ev) {
 function playWav(b64, div) {
   const url = 'data:audio/wav;base64,' + b64;
   audioQueue = audioQueue.then(() => new Promise(res => {
+    if (stopped) { res(); return; }
     const a = new Audio(url);
+    currentAudio = a;
     div.classList.add('speaking');
-    a.onended = () => { div.classList.remove('speaking'); res(); };
+    a.onended = () => { div.classList.remove('speaking'); currentAudio = null; res(); };
     a.onerror = res;
     a.play().catch(res);
   }));
+}
+
+function flushPlayback() {
+  stopped = true;
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  document.querySelectorAll('.turn.speaking').forEach(d => d.classList.remove('speaking'));
 }
 
 function handle(ev) {
@@ -173,6 +185,7 @@ function handle(ev) {
     speakerOf = {};
     speakerOf[ev.a] = 'a';
     speakerOf[ev.b] = 'b';
+    stopped = false;
     setStatus(`duet: ${ev.a} vs ${ev.b} — “${ev.topic}”`, 'live');
   } else if (ev.type === 'turn') {
     window._last = bubble(ev.speaker, ev.text);
@@ -181,7 +194,7 @@ function handle(ev) {
   } else if (ev.type === 'error') {
     setStatus('error: ' + ev.message, 'err');
   } else if (ev.type === 'done') {
-    setStatus('finished', '');
+    setStatus(ev.stopped ? 'stopped' : 'finished', '');
   }
 }
 
@@ -201,7 +214,11 @@ document.getElementById('f').addEventListener('submit', async e => {
     headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
   if (!r.ok) setStatus((await r.json()).detail || 'cannot start', 'err');
 });
-document.getElementById('stop').addEventListener('click', () => fetch('/api/stop', {method:'POST'}));
+document.getElementById('stop').addEventListener('click', () => {
+  flushPlayback();
+  setStatus('stopping…', 'live');
+  fetch('/api/stop', { method: 'POST' });
+});
 connect();
 </script>
 </body>

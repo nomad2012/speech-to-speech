@@ -210,6 +210,8 @@ async def run_duet(sid: str, req: DuetRequest) -> None:
                 if text:
                     break
                 await asyncio.sleep(2)
+            if sess.get("cancelled"):
+                break
             if not text:
                 await publish({"type": "error", "session": sid,
                                "message": "LLM returned empty turn; aborting"})
@@ -218,16 +220,24 @@ async def run_duet(sid: str, req: DuetRequest) -> None:
             sess["hist"][other].append(("user", text))
             sess["transcript"].append({"speaker": speaker, "text": text})
             await publish({"type": "turn", "session": sid, "speaker": speaker, "text": text})
-            wav = await WORKER.synth(text, speaker)
+            sess["synthesizing"] = True
+            try:
+                wav = await WORKER.synth(text, speaker)
+            finally:
+                sess["synthesizing"] = False
+            if sess.get("cancelled"):
+                break
             await publish({"type": "audio", "session": sid, "speaker": speaker,
                            "wav_b64": base64.b64encode(wav).decode(),
                            "secs": len(wav) / 2 / 24000})
             print(f"[duet] {sid} {speaker}: {len(text)} chars, {len(wav)} wav bytes", flush=True)
     except Exception as exc:  # noqa: BLE001
-        await publish({"type": "error", "session": sid, "message": str(exc)})
+        if not sess.get("cancelled"):
+            await publish({"type": "error", "session": sid, "message": str(exc)})
     finally:
         sess["running"] = False
-        await publish({"type": "done", "session": sid})
+        await publish({"type": "done", "session": sid,
+                       "stopped": bool(sess.get("cancelled"))})
 
 
 @asynccontextmanager
@@ -264,9 +274,16 @@ async def start_duet(req: DuetRequest):
 
 @app.post("/api/stop")
 async def stop_duet():
+    interrupted = False
     for s in SESSIONS.values():
         s["cancelled"] = True
-    return {"ok": True}
+        if s.get("synthesizing"):
+            interrupted = True
+    if interrupted:
+        # Abandon the in-flight synth so the stop takes effect immediately;
+        # the worker respawns (and reloads) on the next duel.
+        WORKER.stop()
+    return {"ok": True, "interrupted": interrupted}
 
 
 @app.get("/api/stream")
