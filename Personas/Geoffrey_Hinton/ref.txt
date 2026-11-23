@@ -1,1 +1,1 @@
-What we did was we designed the learning algorithm. That's a bit like designing the principle of evolution. But when this learning algorithm then interacts with data, it produces complicated neural networks that are good at doing things, but we don't really understand exactly how they do those things.
+What we did was we designed the learning algorithm. That' a bit like designing the principle of evolution.

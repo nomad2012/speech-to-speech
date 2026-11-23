@@ -87,10 +87,12 @@ class F5Worker:
         # The first synth() call simply blocks through model load (~1-2 min).
         print("[duet] f5 worker spawned; first synth will absorb model load", flush=True)
 
-    async def synth(self, text: str, persona: str, speed: float = 1.0) -> bytes:
+    async def synth(self, text: str, persona: str, speed: float | None = None) -> bytes:
         async with self._lock:
             await self.start()
-            req = {"text": text, "speed": speed, "persona": persona}
+            req: dict = {"text": text, "persona": persona}
+            if speed is not None:
+                req["speed"] = speed
             loop = asyncio.get_event_loop()
 
             def _rpc() -> dict:
