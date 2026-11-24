@@ -254,6 +254,16 @@ async def get_personas():
     return {"personas": persona_names()}
 
 
+@app.get("/avatar/{name}")
+async def get_avatar(name: str):
+    if name not in set(persona_names()):
+        raise HTTPException(404, "no such persona")
+    img = PERSONAS_BASE / name / "image.jpg"
+    if not img.is_file():
+        raise HTTPException(404, "no avatar for this persona")
+    return FileResponse(img, media_type="image/jpeg")
+
+
 @app.post("/api/duet")
 async def start_duet(req: DuetRequest):
     names = set(persona_names())

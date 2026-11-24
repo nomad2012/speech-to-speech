@@ -54,6 +54,12 @@
     border-radius: 12px; padding: 14px; margin-bottom: 8px;
   }
   form .row2 { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+form .side { display: flex; align-items: center; gap: 10px; min-width: 0; }
+img.avatar {
+  width: 54px; height: 54px; border-radius: 50%; object-fit: cover;
+  border: 2px solid var(--border); flex: 0 0 auto; background: var(--panel-2);
+}
+img.avatar.hidden { display: none; }
   select, input[type=text], input[type=number] {
     padding: 9px 11px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--panel-2); color: var(--ink); font: inherit; width: 100%;
@@ -87,7 +93,10 @@
   .turn.b { align-self: flex-end;   background: var(--b-tint); border-bottom-right-radius: 4px; }
   .turn.speaking { outline: 2px solid var(--accent); }
   .who { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase;
-         color: var(--muted); margin-bottom: 4px; }
+         color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 7px; }
+  .who img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover;
+             border: 1px solid var(--border); flex: 0 0 auto; }
+  .turn.b .who { flex-direction: row-reverse; }
   .txt { line-height: 1.5; font-family: Georgia, "Iowan Old Style", serif; font-size: 1.02rem; }
   .empty { color: var(--muted); font-size: .9rem; text-align: center; padding: 24px 0; }
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
@@ -101,9 +110,15 @@
 </header>
 
 <form id="f">
-  <select id="a" aria-label="first debater"></select>
+  <div class="side">
+    <img id="ava-a" class="avatar hidden" alt="avatar of first debater">
+    <select id="a" aria-label="first debater"></select>
+  </div>
   <span class="vslabel">vs</span>
-  <select id="b" aria-label="second debater"></select>
+  <div class="side">
+    <select id="b" aria-label="second debater"></select>
+    <img id="ava-b" class="avatar hidden" alt="avatar of second debater">
+  </div>
   <div class="row2">
     <input type="text" id="topic" placeholder="topic — e.g. the art of diplomacy">
     <input type="number" id="turns" value="6" min="2" max="20" aria-label="turns">
@@ -135,6 +150,18 @@ function setSel(personas) {
     const el = document.getElementById(id);
     el.innerHTML = personas.map(p => `<option ${p===def?'selected':''}>${p}</option>`).join('');
   }
+  refreshAvatars();
+}
+
+function setAvatarImg(img, name) {
+  img.onerror = () => img.classList.add('hidden');
+  img.classList.remove('hidden');
+  img.src = '/avatar/' + encodeURIComponent(name);
+}
+
+function refreshAvatars() {
+  setAvatarImg(document.getElementById('ava-a'), document.getElementById('a').value);
+  setAvatarImg(document.getElementById('ava-b'), document.getElementById('b').value);
 }
 
 function side(speaker, ev) {
@@ -147,7 +174,10 @@ function side(speaker, ev) {
 function bubble(speaker, text, ev) {
   const div = document.createElement('div');
   div.className = 'turn ' + side(speaker, ev);
-  div.innerHTML = `<div class="who">${speaker}</div><div class="txt"></div>`;
+  div.innerHTML = `<div class="who"><img alt=""><span>${speaker}</span></div><div class="txt"></div>`;
+  const img = div.querySelector('.who img');
+  img.onerror = () => img.remove();
+  img.src = '/avatar/' + encodeURIComponent(speaker);
   div.querySelector('.txt').textContent = text;
   stage.appendChild(div);
   return div;
@@ -204,6 +234,8 @@ function connect() {
   es.onerror = () => { setStatus('reconnecting…', ''); es.close(); setTimeout(connect, 2000); };
 }
 
+document.getElementById('a').addEventListener('change', refreshAvatars);
+document.getElementById('b').addEventListener('change', refreshAvatars);
 document.getElementById('f').addEventListener('submit', async e => {
   e.preventDefault();
   const body = { a: document.getElementById('a').value,
