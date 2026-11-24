@@ -42,7 +42,7 @@ PORT = int(os.environ.get("DUET_PORT", "7862"))
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 READY_RE = re.compile(r"worker ready on (\w+) in (\d+)")
@@ -262,6 +262,24 @@ async def get_avatar(name: str):
     if not img.is_file():
         raise HTTPException(404, "no avatar for this persona")
     return FileResponse(img, media_type="image/jpeg")
+
+
+class SayRequest(BaseModel):
+    text: str
+    persona: str | None = None
+    speed: float | None = None
+
+
+@app.post("/api/say")
+async def api_say(req: SayRequest):
+    """One-shot utterance on this server's resident F5 worker. The Hermes
+    gateway's f5tts plugin proxies here instead of spawning its own worker,
+    so the RTX 5070 keeps exactly one F5 tenant while this server is up."""
+    persona = req.persona or "Stevens"
+    if persona not in set(persona_names()):
+        raise HTTPException(400, f"unknown persona: {persona}")
+    wav = await WORKER.synth(req.text, persona, req.speed)
+    return Response(content=wav, media_type="audio/wav")
 
 
 @app.post("/api/duet")
